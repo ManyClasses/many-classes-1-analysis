@@ -1,0 +1,19 @@
+model {
+  for(s in 1:n.students){
+    delta.z[s] ~ dnorm(mu.class[class.index[s]], 1 / sigma.class[class.index[s]] ^ 2)
+  }
+  for(c in 1:n.classes){
+    mu.class[c] <- beta.intercept[class.condition[c]] + sum(beta[,class.condition[c]] * y[,c])
+    sigma.class[c] ~ dgamma(sh.class.condition[class.condition[c]], ra.class.condition[class.condition[c]])
+  }
+  for(i in 1:n.conditions){
+    sh.class.condition[i]
+    ra.class.condition[i]
+    
+    beta.intercept[i]
+    
+    for(x in 1:n.moderators){
+      beta[x,i]
+    }
+  }
+}

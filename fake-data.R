@@ -2,6 +2,7 @@ n.classes <- 20
 
 classes <- data.frame(
   id=1:n.classes,
+  incentive=sample(c("Incentive", "NoIncentive"), n.classes, replace=T),
   discipline=sample(c("STEM", "Non-STEM"), n.classes, replace=T),
   format=sample(c("Classroom", "Online", "Hybrid"), n.classes, replace=T),
   class.size=rbinom(n.classes, 200, 0.5),
@@ -26,3 +27,15 @@ for(c in 1:n.classes){
     student.data <- one.class
   }
 }
+
+# summaries for JAGS
+n.students <- nrow(student.data)
+n.metric.moderators <- 5
+n.nominal.moderators <- 3
+n.levels.nominal.moderator <- c(2,3,3)
+
+class.index <- student.data$class.id
+class.condition <- as.numeric(factor(classes$incentive, levels=c("NoIncentive", "Incentive")))
+
+y.metric <- matrix()
+y.nominal <- matrix()

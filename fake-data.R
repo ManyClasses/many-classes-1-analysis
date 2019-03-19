@@ -65,9 +65,13 @@ jags.data <- list(
 
 # run jags
 library(runjags)
-run.jags('institution-and-classroom-level-jags-model.txt', 
+runjags.options(force.summary=TRUE)
+result <- run.jags('institution-and-classroom-level-jags-model.txt', 
          data=jags.data, 
          n.chains=3,
          sample = 1000,
          burnin = 1000,
-         monitor = c('mu.class', 'sigma.class','beta.intercept', 'beta.metric', 'beta.nominal', 'sigma.mode', 'sigma.sd'))
+         monitor = c('mu.class', 'sigma.class'), #,'beta.intercept', 'beta.metric', 'beta.nominal', 'sigma.mode', 'sigma.sd'),
+         summarise = TRUE)
+
+plot(result)

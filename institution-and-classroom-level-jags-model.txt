@@ -25,9 +25,13 @@ model {
     delta.z[s] ~ dnorm(mu.class[class.index[s]], 1 / sigma.class[class.index[s]] ^ 2)
   }
   for(c in 1:n.classes){
+    for(n in 1:n.nominal.moderators){
+      class.nominal.vector[c,n] <- beta.nominal[n, class.condition[c], y.nominal[n,c]]
+    }
+  
     mu.class[c] <- beta.intercept[class.condition[c]] + 
       sum(beta.metric[1:n.metric.moderators, class.condition[c]] * y.metric[1:n.metric.moderators,c]) +
-      sum(beta.nominal[1:n.nominal.moderators, class.condition[c], y.nominal[1:n.nominal.moderators,c])
+      sum(class.nominal.vector[c,1:n.nominal.moderators])
       
     sigma.class[c] ~ dgamma(sh.class.condition[class.condition[c]], ra.class.condition[class.condition[c]])
   }

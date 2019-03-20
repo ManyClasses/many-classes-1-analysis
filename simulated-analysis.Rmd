@@ -107,7 +107,7 @@ jags.data <- list(
 
 # Running the Model
 
-```{r message=FALSE, warning=FALSE}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 # create list of nominal beta parameters to avoid tracking chains with NAs
 beta.nominal.list <- character()
 for(f in 1:n.nominal.moderators){
@@ -118,7 +118,7 @@ for(f in 1:n.nominal.moderators){
   }
 }
 # run jags
-runjags.options(force.summary=TRUE)
+runjags.options(force.summary=TRUE, silent.jags=TRUE, silent.runjags=TRUE)
 result <- run.jags('institution-and-classroom-level-jags-model.txt', 
          data=jags.data, 
          n.chains=3,

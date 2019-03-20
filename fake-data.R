@@ -71,7 +71,7 @@ result <- run.jags('institution-and-classroom-level-jags-model.txt',
          n.chains=3,
          sample = 1000,
          burnin = 1000,
-         monitor = c('mu.class', 'sigma.class'), #,'beta.intercept', 'beta.metric', 'beta.nominal', 'sigma.mode', 'sigma.sd'),
+         monitor = c('mu.class', 'sigma.class','beta.intercept', 'beta.metric', 'beta.nominal'),# 'sigma.mode', 'sigma.sd'),
          summarise = TRUE)
 
 plot(result)

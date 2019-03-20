@@ -1,0 +1,168 @@
+---
+title: "ManyClasses 1 Simulated Analysis"
+output: html_notebook
+---
+
+```{r message=FALSE, warning=FALSE}
+library(runjags)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(ggridges)
+library(stringr)
+```
+
+# Generating Fake Data
+
+To simulate the analysis, we generate data that has the same structure as the eventual ManyClasses 1 data. These are the parameters of that data generating process.
+
+```{r}
+n.classes <- 40
+```
+
+First we generate a data frame of classes with random values for each factor.
+
+```{r}
+classes <- data.frame(
+  id=1:n.classes,
+  incentive=sample(c("Incentive", "NoIncentive"), n.classes, replace=T),
+  discipline=sample(c("STEM", "Non-STEM"), n.classes, replace=T),
+  format=sample(c("Classroom", "Online", "Hybrid"), n.classes, replace=T),
+  class.size=rbinom(n.classes, 150, 0.5),
+  proportion.lecture=rbeta(n.classes, 0.8, 0.8),
+  n.assignments=2+rbinom(n.classes, 10, 0.1),
+  class.level=sample(c("Intro","Intermediate","Advanced"), n.classes, replace=T),
+  n.exams=2+sample(c(0,2),n.classes, prob = c(0.8, 0.2), replace=T),
+  admission.rate=rbeta(n.classes,5,2)
+)
+```
+
+Then we generate students that come from each class, create exams, assign random scores to the exams, and normalize the data. To norm the data we z-score each exam separately, and then find the average difference in z-scores for delayed and immediate feedback.
+
+```{r}
+student.data <- NA
+for(c in 1:n.classes){
+  class.size <- classes$class.size[c]
+  student.id <- 1:class.size
+  exam <- 1:(classes$n.exams[c])
+  one.class <- expand.grid(student.id=student.id, exam=exam) %>% 
+    mutate(immediate.feedback = if_else(student.id <= class.size/2, exam %% 2 == 1, exam %% 2 == 0)) %>% 
+    mutate(feedback = if_else(immediate.feedback, "Immediate", "Delayed")) %>% 
+    select(-immediate.feedback) %>%
+    mutate(exam.score = rnorm(n(),0,1)) %>%
+    group_by(exam) %>%
+    mutate(m = mean(exam.score), sd = sd(exam.score), exam.score.normed = (exam.score - mean(exam.score)) / sd(exam.score)) %>%
+    ungroup() %>%
+    group_by(student.id, feedback) %>%
+    summarize(average.z = mean(exam.score.normed)) %>%
+    spread(feedback, average.z) %>%
+    mutate(delta.z = Immediate - Delayed) %>%
+    mutate(class.id = c)
+  if(c > 1){
+    student.data <- rbind(student.data, one.class)
+  } else {
+    student.data <- one.class
+  }
+}
+```
+
+# Preparing Data for Model
+
+The data needs to be reformatted for the JAGS model.
+
+```{r}
+# convert to numeric factors
+classes$incentive <- as.numeric(factor(classes$incentive, levels=c("NoIncentive", "Incentive")))
+classes$discipline <- as.numeric(factor(classes$discipline, levels=c("STEM", "Non-STEM")))
+classes$format <- as.numeric(factor(classes$format, levels=c("Classroom", "Online", "Hybrid")))
+classes$class.level <- as.numeric(factor(classes$class.level, levels=c("Intro", "Intermediate", "Advanced")))
+
+# summaries for JAGS
+delta.z <- student.data$delta.z
+n.students <- nrow(student.data)
+class.index <- student.data$class.id
+class.condition <- classes$incentive
+n.metric.moderators <- 5
+n.nominal.moderators <- 3
+n.levels.nominal.moderator <- c(2,3,3)
+n.conditions <- 2
+y.metric <- array(data=t(as.matrix(classes)[,metric.factors]), dim=c(n.metric.moderators, n.classes))
+y.nominal <- array(data=t(as.matrix(classes)[,nominal.factors]), dim=c(n.nominal.moderators, n.classes))
+
+# packaging data for JAGS
+jags.data <- list(
+  delta.z=delta.z,
+  n.students=n.students,
+  class.index=class.index,
+  class.condition=class.condition,
+  n.metric.moderators=n.metric.moderators,
+  n.nominal.moderators=n.nominal.moderators,
+  n.conditions=n.conditions,
+  n.classes=n.classes,
+  n.levels.nominal.moderator=n.levels.nominal.moderator,
+  y.metric=y.metric,
+  y.nominal=y.nominal
+)
+```
+
+# Running the Model
+
+```{r message=FALSE, warning=FALSE}
+# create list of nominal beta parameters to avoid tracking chains with NAs
+beta.nominal.list <- character()
+for(f in 1:n.nominal.moderators){
+  for(i in 1:2) { # incentive condition
+    for(l in 1:n.levels.nominal.moderator[f]){
+      beta.nominal.list <- c(beta.nominal.list, paste0('beta.nominal[',f,',',i,',',l,']'))
+    }
+  }
+}
+# run jags
+runjags.options(force.summary=TRUE)
+result <- run.jags('institution-and-classroom-level-jags-model.txt', 
+         data=jags.data, 
+         n.chains=3,
+         sample = 1000,
+         burnin = 1000,
+         monitor = c('mu.class', 'sigma.class','beta.intercept', 'beta.metric', beta.nominal.list, 'sigma.mode', 'sigma.sd'),
+         summarise = TRUE)
+```
+
+# Visualizing the results
+
+```{r}
+# convert to data frame
+mcmc.matrix <- as.matrix(result$mcmc, iters=TRUE, chains=TRUE)
+mcmc.data.frame <- data.frame(mcmc.matrix) %>% gather(key="parameter", value="x",3:ncol(mcmc.matrix))
+
+```
+
+Class Means
+
+```{r}
+mcmc.data.frame %>% filter(str_detect(parameter, 'mu.class')) %>%
+  ggplot(aes(x=x,y=parameter))+
+  geom_density_ridges()
+```
+
+Class SDs
+```{r}
+mcmc.data.frame %>% filter(str_detect(parameter, 'sigma.class')) %>%
+  ggplot(aes(x=x,y=parameter))+
+  geom_density_ridges()
+```
+
+Metric Predictors
+```{r}
+mcmc.data.frame %>% filter(str_detect(parameter, 'beta.metric')) %>%
+  ggplot(aes(x=x,y=parameter))+
+  geom_density_ridges()
+```
+
+Nominal Predictors
+```{r}
+mcmc.data.frame %>% filter(str_detect(parameter, 'beta.nominal')) %>%
+  ggplot(aes(x=x,y=parameter))+
+  geom_density_ridges()
+```
+

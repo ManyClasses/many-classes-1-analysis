@@ -1,0 +1,52 @@
+### data dictionary
+# delta.z[s] is the difference in z-scores for individual student s (immediate - delayed)
+# n.students is the number of unique students
+# class.index[s] is student s's class ID
+# class.condition[c] is classroom c's incentive condition
+# n.metric.moderators is the number of moderating variables with metric scales
+# n.nominal.moderators is the number of moderating variables with nominal scales
+# y.metric[1:n.metric.moderators, s] is the vector of values of the metric moderators for student s
+# y.nominal[1:n.nominal.moderators, s] is the vector of values of the nominal moderators for student s
+# n.conditions is the number of unique conditions that split all the moderators (here it will be 2 for no incentive and yes incentive)
+# n.levels.nominal.moderator[n] is the number of unique levels for nominal moderator n
+
+### parameter dictionary
+# mu[s] is the mean of the distribution from which delta.z scores are drawn for student s
+# beta.intercept[x] is the intercept of the linear model for incentive condition x
+# beta.metric[a,x] is the coefficient of metric predictor a in incentive condition x
+# beta.nominal[a,x,l] is the centered (sum to zero across levels l) coefficient of the nominal predictor a in incentive condition x for level l
+# sigma.condition[i] is the sd of the distribution from which delta.z scores are drawn for students in condition i
+
+
+model {
+  for(s in 1:n.students){
+    delta.z[s] ~ dnorm(mu[s], 1 / sigma[s] ^ 2)
+    
+    for(n in 1:n.nominal.moderators){
+      student.nominal.vector[s,n] <- beta.nominal[n, class.condition[class.index[s]], y.nominal[n,s]]
+    }
+    
+    mu[s] <- beta.intercept[class.condition[class.index[s]]] + 
+      sum(beta.metric[1:n.metric.moderators, class.condition[class.index[s]]] * y.metric[1:n.metric.moderators,s]) +
+      sum(student.nominal.vector[s,1:n.nominal.moderators])
+      
+    sigma[s] <- sigma.condition[class.condition[class.index[s]]]
+  }
+  
+  for(i in 1:n.conditions){
+  
+    sigma.condition[i] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
+    
+    beta.intercept[i] ~ dnorm(0,1)
+    
+    for(m in 1:n.metric.moderators){
+      beta.metric[m,i] ~ dnorm(0,1)
+    }
+    for(n in 1:n.nominal.moderators){
+      for(l in 1:n.levels.nominal.moderator[n]){
+        beta.nominal.uncentered[n,i,l] ~ dnorm(0,1)
+        beta.nominal[n,i,l] <- beta.nominal.uncentered[n,i,l] - mean(beta.nominal.uncentered[n,i,1:n.levels.nominal.moderator[n]])
+      }
+    }
+  }
+}

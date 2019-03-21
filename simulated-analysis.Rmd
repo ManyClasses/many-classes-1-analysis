@@ -20,7 +20,7 @@ To simulate the analysis, we generate data that has the same structure as the ev
 n.classes <- 40
 ```
 
-First we generate a data frame of classes with random values for each factor.
+Generate a data frame of classes with random values for each factor.
 
 ```{r}
 classes <- data.frame(
@@ -36,6 +36,7 @@ classes <- data.frame(
   admission.rate=rbeta(n.classes,5,2)
 )
 ```
+
 
 Then we generate students that come from each class, create exams, assign random scores to the exams, and normalize the data. To norm the data we z-score each exam separately, and then find the average difference in z-scores for delayed and immediate feedback.
 
@@ -64,6 +65,14 @@ for(c in 1:n.classes){
     student.data <- one.class
   }
 }
+```
+
+Generating moderator variables for students
+
+```{r}
+student.data <- student.data %>% mutate(
+  access.assignment = sample(c("No", "Yes"), n(), replace=T, prob=c(0.1, 0.9)),
+  time.spent.on.assignment = rgamma(n(), 10),
 ```
 
 # Preparing Data for Model

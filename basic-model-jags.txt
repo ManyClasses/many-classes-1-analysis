@@ -4,18 +4,15 @@
 # class.index[s] is student s's class ID
 # class.condition[c] is classroom c's incentive condition
 # n.classes is the number of unique classes
-# n.metric.moderators is the number of moderating variables with metric scales
-# n.nominal.moderators is the number of moderating variables with nominal scales
-# y.metric[1:n.metric.moderators, c] is the vector of values of the metric moderators for classroom c
-# y.nominal[1:n.nominal.moderators, c] is the vector of values of the nominal moderators for classroom c
 # n.conditions is the number of unique conditions that split all the moderators (here it will be 2 for no incentive and yes incentive)
-# n.levels.nominal.moderator[n] is the number of unique levels for nominal moderator n
 
 ### parameter dictionary
 # mu.class[c] is the mean of the distribution from which delta.z scores are drawn for class c
 # sigma.class[c] is the sd of the distribution from which delta.z scores are drawn for class c
-# sigma.mode[i] is the mode of the distribution from which classroom sigma parameters are drawn for condition i
-# sigma.sd[i] is the sd of the distribution from which classroom sigma parameters are drawn for condition i
+# sigma.mode is the mode of the distribution from which classroom sigma parameters are drawn 
+# sigma.sd is the sd of the distribution from which classroom sigma parameters are drawn
+# mu.condition.effect[i] is the mean of the distribution from which mu.class values are drawn in condition i
+# sigma.condition.effect[i] is the sd of the distribution from which mu.class values are drawn in condition i
 
 model {
   for(s in 1:n.students){

@@ -10,6 +10,8 @@ library(dplyr)
 library(ggplot2)
 library(ggridges)
 library(stringr)
+library(tibble)
+library(forcats)
 ```
 
 # Generating Fake Data
@@ -24,7 +26,7 @@ Generate a data frame of classes with random values for each factor.
 
 ```{r}
 classes <- data.frame(
-  id=1:n.classes,
+  class.id=1:n.classes,
   incentive=sample(c("Incentive", "NoIncentive"), n.classes, replace=T),
   discipline=sample(c("STEM", "Non-STEM"), n.classes, replace=T),
   format=sample(c("Classroom", "Online", "Hybrid"), n.classes, replace=T),
@@ -130,83 +132,45 @@ runjags.options(force.summary=TRUE, silent.jags=TRUE, silent.runjags=TRUE)
 
 ```{r}
 model.1.result <- run.jags(
-  model='no-moderators-jags-model.txt', 
+  model='basic-model-jags.txt', 
   data=jags.data,
   n.chains = 3,
   sample = 1000,
   burnin = 1000,
-  monitor = c('mu.condition','sigma.condition')
+  monitor = c('mu.class','sigma.class', 'mu.condition.effect', 'sigma.condition.effect', 'sigma.mode', 'sigma.sd')
 )
 ```
 
-## Effect of Feedback Timing in Different Incentive Conditions
+## Class-level effects
 
-What's the overall mean for delta z-scores for the two conditions? Values above 0 indicate a benefit of immediate feedback. Values below 0 indicate a benefit of delayed feedback.
+Start with merging the model results with the class-level data, and adding columns to differentiate parameters of the model.
 
-How much variance is there in the delta z-scores for the two conditions?
-
-```{r}
-model.1.result$summaries
+```{r message=FALSE, warning=FALSE}
+model.1.summary <- as.data.frame(model.1.result$summaries)
+model.1.summary <- model.1.summary %>%
+  rownames_to_column() %>%
+  remove_rownames() %>%
+  mutate(parameter = str_remove(rowname, "\\[.*\\]")) %>%
+  mutate(class.id = as.numeric(if_else(parameter %in% c("mu.class", "sigma.class"), str_extract(rowname, "[0-9]+"), "NA"))) %>%
+  mutate(i.condition = as.numeric(if_else(parameter %in% c("mu.condition.effect", "sigma.condition.effect"), str_extract(rowname, "[0-9]+"), "NA"))) %>%
+  left_join(classes) %>%
+  mutate(i.merge = if_else(!is.na(i.condition), i.condition, incentive)) %>%
+  mutate(incentive = factor(i.merge, labels = c("Incentive","No Incentive"))) %>%
+  select(-i.merge, -i.condition)
 ```
 
-# Running the Model
-
-```{r message=FALSE, warning=FALSE, include=FALSE}
-# create list of nominal beta parameters to avoid tracking chains with NAs
-beta.nominal.list <- character()
-for(f in 1:n.nominal.moderators){
-  for(i in 1:2) { # incentive condition
-    for(l in 1:n.levels.nominal.moderator[f]){
-      beta.nominal.list <- c(beta.nominal.list, paste0('beta.nominal[',f,',',i,',',l,']'))
-    }
-  }
-}
-# run jags
-runjags.options(force.summary=TRUE, silent.jags=TRUE, silent.runjags=TRUE)
-result <- run.jags('institution-and-classroom-level-jags-model.txt', 
-         data=jags.data, 
-         n.chains=3,
-         sample = 1000,
-         burnin = 1000,
-         monitor = c('mu.class', 'sigma.class','beta.intercept', 'beta.metric', beta.nominal.list, 'sigma.mode', 'sigma.sd'),
-         summarise = TRUE)
+```{r fig.height=7, fig.width=7}
+model.1.summary %>% 
+  filter(parameter %in% c("mu.class", "mu.condition.effect")) %>% 
+  mutate(y.label = factor(if_else(is.na(class.id), as.character(incentive), as.character(class.id)))) %>%
+  mutate(y.label = fct_reorder(y.label, Mean)) %>%
+ggplot(aes(x=Mean, xmin=Lower95, xmax=Upper95, y=y.label, color=incentive))+
+  geom_errorbarh()+
+  geom_point()+
+  geom_vline(xintercept=0, linetype='dashed') +
+  labs(y="Class ID", x="Relative Benefit of Immediate Feedback")+
+  facet_grid(parameter~., scales = 'free', space='free')+
+  scale_color_brewer(name="Incentive Condition", type="qual", palette = "Set1")+
+  theme_minimal()+
+  theme(strip.background = element_blank(), strip.text = element_blank())
 ```
-
-# Visualizing the results
-
-```{r}
-# convert to data frame
-mcmc.matrix <- as.matrix(result$mcmc, iters=TRUE, chains=TRUE)
-mcmc.data.frame <- data.frame(mcmc.matrix) %>% gather(key="parameter", value="x",3:ncol(mcmc.matrix))
-
-```
-
-Class Means
-
-```{r}
-mcmc.data.frame %>% filter(str_detect(parameter, 'mu.class')) %>%
-  ggplot(aes(x=x,y=parameter))+
-  geom_density_ridges()
-```
-
-Class SDs
-```{r}
-mcmc.data.frame %>% filter(str_detect(parameter, 'sigma.class')) %>%
-  ggplot(aes(x=x,y=parameter))+
-  geom_density_ridges()
-```
-
-Metric Predictors
-```{r}
-mcmc.data.frame %>% filter(str_detect(parameter, 'beta.metric')) %>%
-  ggplot(aes(x=x,y=parameter))+
-  geom_density_ridges()
-```
-
-Nominal Predictors
-```{r}
-mcmc.data.frame %>% filter(str_detect(parameter, 'beta.nominal')) %>%
-  ggplot(aes(x=x,y=parameter))+
-  geom_density_ridges()
-```
-

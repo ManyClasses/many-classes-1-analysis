@@ -22,7 +22,13 @@ model {
   }
   for(c in 1:n.classes){
     # the mean of the class distribution is sampled from a condition-specific normal
-    mu.class[c] ~ dnorm(mu.condition.effect[class.condition[c]], sigma.condition.effect[class.condition[c]])
+    mu.class[c] ~ dnorm(mu[c] , sigma.condition.effect[class.condition[c]])
+    
+    # intercept of the above normal dist should be condition specific
+    # moderator effect should have condition specific value, with sd
+    # coefficient of variation is sd of moderator / value of intercept param
+    # will get two of these, one for each incentive condition.
+    mu[c] <- mu.condition.effect[class.condition[c]] + moderator.effect[class.condition[c], moderator.level[c]]
     
     # the sd of the class distribution is sampled from a gamma
     sigma.class[c] ~ dgamma(sh.sigma.class, ra.sigma.class)
@@ -31,6 +37,10 @@ model {
     # prior distribution for the condition-specific mu normal
     mu.condition.effect[i] ~ dnorm(0,1)
     sigma.condition.effect[i] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
+    for(l in 1:n.moderator.levels){
+      moderator.effect[i,l] ~ dnorm(0, moderator.sd[i])
+    }
+    moderator.sd[i] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1; this is probably not wide enough?
   }
   # prior distribution for the gamma defining sd of classes
   ra.sigma.class <- (sigma.mode + sqrt(sigma.mode^2 + 4*sigma.sd^2)) / (2 * sigma.sd^2)
@@ -41,4 +51,7 @@ model {
   
   # computed quantity of difference in effect by incentive condition
   mu.condition.diff <- mu.condition.effect[1] - mu.condition.effect[2]
+  for(i in 1:n.conditions){
+    coeff.variation[i] <- moderator.sd[i] / mu.condition.effect[i]
+  }
 }

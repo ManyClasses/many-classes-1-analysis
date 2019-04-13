@@ -12,7 +12,7 @@
 # sigma.mode is the mode of the distribution from which classroom sigma parameters are drawn 
 # sigma.sd is the sd of the distribution from which classroom sigma parameters are drawn
 # mu.condition.effect[i] is the mean of the distribution from which mu.class values are drawn in condition i
-# sigma.condition.effect[i] is the sd of the distribution from which mu.class values are drawn in condition i
+# sigma.condition.effect[i] is the sd of the distribution from which mu.class values are drawn in condition i. this is a measure of heterogeneity.
 # mu.condition.diff is simple mu.condition.effect[1] - mu.condition.effect[2]. this is the difference between incentive and no incentive conditions.
 
 model {

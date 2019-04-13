@@ -12,6 +12,7 @@ library(ggridges)
 library(stringr)
 library(tibble)
 library(forcats)
+library(purrr)
 ```
 
 # Generating Fake Data
@@ -27,13 +28,13 @@ Generate a data frame of classes with random values for each factor.
 ```{r}
 classes <- data.frame(
   class.id=1:n.classes,
-  incentive=sample(c("Incentive", "NoIncentive"), n.classes, replace=T),
-  discipline=sample(c("STEM", "Non-STEM"), n.classes, replace=T),
-  format=sample(c("Classroom", "Online", "Hybrid"), n.classes, replace=T),
+  incentive=factor(sample(c("Incentive", "NoIncentive"), n.classes, replace=T), levels=c("NoIncentive", "Incentive")),
+  discipline=factor(sample(c("STEM", "Non-STEM"), n.classes, replace=T), levels=c("Non-STEM", "STEM")),
+  format=factor(sample(c("Classroom", "Online", "Hybrid"), n.classes, replace=T), levels=c("Classroom", "Hybrid", "Online")),
   class.size=rbinom(n.classes, 150, 0.5),
   proportion.lecture=rbeta(n.classes, 0.8, 0.8),
   n.assignments=2+rbinom(n.classes, 10, 0.1),
-  class.level=sample(c("Intro","Intermediate","Advanced"), n.classes, replace=T),
+  class.level=factor(sample(c("Intro","Intermediate","Advanced"), n.classes, replace=T), levels=c("Intro", "Intermediate", "Advanced")),
   n.exams=2+sample(c(0,2),n.classes, prob = c(0.8, 0.2), replace=T),
   admission.rate=rbeta(n.classes,5,2)
 )
@@ -83,27 +84,12 @@ student.data <- student.data %>% mutate(
 The data needs to be reformatted for the JAGS model.
 
 ```{r}
-# convert to numeric factors
-classes$incentive <- as.numeric(factor(classes$incentive, levels=c("NoIncentive", "Incentive")))
-classes$discipline <- as.numeric(factor(classes$discipline, levels=c("STEM", "Non-STEM")))
-classes$format <- as.numeric(factor(classes$format, levels=c("Classroom", "Online", "Hybrid")))
-classes$class.level <- as.numeric(factor(classes$class.level, levels=c("Intro", "Intermediate", "Advanced")))
-
-# list of moderators to allow dynamic construction
-metric.moderators <- c('class.size', 'proportion.lecture', 'n.assignments', 'n.exams', 'admission.rate')
-nominal.moderators <- c('discipline','format','class.level')
-
 # summaries for JAGS
 delta.z <- student.data$delta.z
 n.students <- nrow(student.data)
 class.index <- student.data$class.id
-class.condition <- classes$incentive
-n.metric.moderators <- 5
-n.nominal.moderators <- 3
-n.levels.nominal.moderator <- c(2,3,3)
+class.condition <- as.numeric(classes$incentive)
 n.conditions <- 2
-y.metric <- array(data=t(as.matrix(classes)[,metric.moderators]), dim=c(n.metric.moderators, n.classes))
-y.nominal <- array(data=t(as.matrix(classes)[,nominal.moderators]), dim=c(n.nominal.moderators, n.classes))
 
 # packaging data for JAGS
 jags.data <- list(
@@ -111,13 +97,8 @@ jags.data <- list(
   n.students=n.students,
   class.index=class.index,
   class.condition=class.condition,
-  n.metric.moderators=n.metric.moderators,
-  n.nominal.moderators=n.nominal.moderators,
   n.conditions=n.conditions,
-  n.classes=n.classes,
-  n.levels.nominal.moderator=n.levels.nominal.moderator,
-  y.metric=y.metric,
-  y.nominal=y.nominal
+  n.classes=n.classes
 )
 ```
 
@@ -141,7 +122,7 @@ model.1.result <- run.jags(
 )
 ```
 
-## Class-level effects
+## Class-level effect of feedback and incentive
 
 Start with merging the model results with the class-level data, and adding columns to differentiate parameters of the model.
 
@@ -154,10 +135,12 @@ model.1.summary <- model.1.summary %>%
   mutate(class.id = as.numeric(if_else(parameter %in% c("mu.class", "sigma.class"), str_extract(rowname, "[0-9]+"), "NA"))) %>%
   mutate(i.condition = as.numeric(if_else(parameter %in% c("mu.condition.effect", "sigma.condition.effect"), str_extract(rowname, "[0-9]+"), "NA"))) %>%
   left_join(classes) %>%
-  mutate(i.merge = if_else(!is.na(i.condition), i.condition, incentive)) %>%
-  mutate(incentive = factor(i.merge, labels = c("Incentive","No Incentive"))) %>%
+  mutate(i.merge = if_else(!is.na(i.condition), i.condition, as.numeric(incentive))) %>%
+  mutate(incentive = factor(i.merge, labels = c("No Incentive","Incentive"))) %>%
   select(-i.merge, -i.condition)
 ```
+
+Plot 95% HDI for each class, and overall estimate for two conditions.
 
 ```{r fig.height=7, fig.width=7}
 model.1.summary %>% 
@@ -165,9 +148,9 @@ model.1.summary %>%
   mutate(y.label = factor(if_else(is.na(class.id), as.character(incentive), as.character(class.id)))) %>%
   mutate(y.label = fct_reorder(y.label, Mean)) %>%
 ggplot(aes(x=Mean, xmin=Lower95, xmax=Upper95, y=y.label, color=incentive))+
+  geom_vline(xintercept=0, linetype='dashed') +
   geom_errorbarh()+
   geom_point()+
-  geom_vline(xintercept=0, linetype='dashed') +
   labs(y="Class ID", x="Relative Benefit of Immediate Feedback")+
   facet_grid(parameter~., scales = 'free', space='free')+
   scale_color_brewer(name="Incentive Condition", type="qual", palette = "Set1")+
@@ -175,9 +158,99 @@ ggplot(aes(x=Mean, xmin=Lower95, xmax=Upper95, y=y.label, color=incentive))+
   theme(strip.background = element_blank(), strip.text = element_blank())
 ```
 
-Analyze difference between Incentive and No Incentive
+Summary stats on difference between Incentive and No Incentive, as estimated by model.
 
 ```{r}
 model.1.summary %>% filter(parameter == 'mu.condition.diff')
 ```
+
+# Heterogeneity Analysis
+
+## Class Level
+
+Create a data frame to hold all class-level moderators and corresponding estimates
+
+```{r}
+class.level.moderators <- data.frame(moderator = colnames(classes)[3:length(colnames(classes))])
+class.level.moderators$moderator <- as.character(class.level.moderators$moderator)
+```
+
+Create a function to pick the correct model and pass in the correct data values.
+
+```{r}
+estimate.class.moderator.effect <- function(moderator.name){
+  
+  print(moderator.name)
+  
+  if(!moderator.name %in% colnames(classes)) {
+    stop(paste0("Moderator '", moderator.name, "' does not appear in classes data frame"))
+  }
+  
+  # packaging data for JAGS
+  jags.data.moderator <- list(
+    delta.z=delta.z,
+    n.students=n.students,
+    class.index=class.index,
+    class.condition=class.condition,
+    n.conditions=n.conditions,
+    n.classes=n.classes,
+    moderator.level = as.numeric(classes[[moderator.name]])
+  )
+  
+  if(is.numeric(classes[moderator.name])){
+    model <- 'cont-moderator-model-jags.txt'
+  } else {
+    model <- 'disc-moderator-model-jags.txt'
+    jags.data.moderator$n.moderator.levels = length(levels(classes[[moderator.name]]))
+  }
+  
+  model.moderator.result <- run.jags(
+    model=model, 
+    data=jags.data.moderator,
+    n.chains = 3,
+    sample = 1000,
+    burnin = 1000,
+    monitor = c('mu.class','sigma.class', 'mu.condition.effect', 'sigma.condition.effect', 'sigma.mode', 'sigma.sd', 'moderator.effect', 'moderator.sd', 'var.predict', 'var.residuals', 'r.sq')
+  )
+  
+  return(list(result=model.moderator.result))
+}
+```
+
+Iterate through moderators and run the models.
+
+```{r}
+
+m1 <- estimate.class.moderator.effect('discipline')
+m2 <- estimate.class.moderator.effect('class.level')
+m3 <- estimate.class.moderator.effect('format')
+
+#r <- estimate.class.moderator.effect('discipline')
+class.level.moderators <- class.level.moderators %>% 
+  filter(moderator %in% c('discipline', 'class.level', 'format')) %>% 
+  group_by(moderator) %>%
+  mutate(mcmc = estimate.class.moderator.effect(moderator[1])) %>%
+  ungroup()
+
+# I can't figure out how to do this within dplyr...
+
+class.level.moderators$r.low <- 0
+class.level.moderators$r.high <- 0
+class.level.moderators$r.median <- 0
+
+for(i in 1:nrow(class.level.moderators)){
+  class.level.moderators$r.low[i] <- class.level.moderators$mcmc[[i]]$summaries['r.sq','Lower95']
+  class.level.moderators$r.high[i] <- class.level.moderators$mcmc[[i]]$summaries['r.sq','Upper95']
+  class.level.moderators$r.median[i] <- class.level.moderators$mcmc[[i]]$summaries['r.sq','Median']
+}
+
+#class.level.moderators %>%
+#  mutate(r.low = map(mcmc, function(x){ return(x$mcmc[[1]]$summaries['r.sq','Lower95'] )})) %>%
+#  mutate(r.high = map(mcmc, function(x){  return(x$mcmc[[1]]$summaries['r.sq','Upper95'] )})) %>%
+#  mutate(r.median = map(mcmc, function(x){ return(x$mcmc[[1]]$summaries['r.sq','Median'] )})) 
+  
+```
+
+## Student Level
+
 

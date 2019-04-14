@@ -168,13 +168,6 @@ model.1.summary %>% filter(parameter == 'mu.condition.diff')
 
 ## Class Level
 
-Create a data frame to hold all class-level moderators and corresponding estimates
-
-```{r}
-class.level.moderators <- data.frame(moderator = colnames(classes)[3:length(colnames(classes))])
-class.level.moderators$moderator <- as.character(class.level.moderators$moderator)
-```
-
 Create a function to pick the correct model and pass in the correct data values.
 
 ```{r}
@@ -197,7 +190,7 @@ estimate.class.moderator.effect <- function(moderator.name){
     moderator.level = as.numeric(classes[[moderator.name]])
   )
   
-  if(is.numeric(classes[moderator.name])){
+  if(is.numeric(classes[[moderator.name]])){
     model <- 'cont-moderator-model-jags.txt'
   } else {
     model <- 'disc-moderator-model-jags.txt'
@@ -221,13 +214,14 @@ Iterate through moderators and run the models.
 
 ```{r}
 
-m1 <- estimate.class.moderator.effect('discipline')
-m2 <- estimate.class.moderator.effect('class.level')
-m3 <- estimate.class.moderator.effect('format')
+#m1 <- estimate.class.moderator.effect('admission.rate')
 
-#r <- estimate.class.moderator.effect('discipline')
+
+class.level.moderators <- data.frame(moderator = colnames(classes)[3:length(colnames(classes))])
+class.level.moderators$moderator <- as.character(class.level.moderators$moderator)
+
 class.level.moderators <- class.level.moderators %>% 
-  filter(moderator %in% c('discipline', 'class.level', 'format')) %>% 
+  #filter(moderator %in% c('discipline', 'class.level', 'format')) %>% 
   group_by(moderator) %>%
   mutate(mcmc = estimate.class.moderator.effect(moderator[1])) %>%
   ungroup()
@@ -243,12 +237,18 @@ for(i in 1:nrow(class.level.moderators)){
   class.level.moderators$r.high[i] <- class.level.moderators$mcmc[[i]]$summaries['r.sq','Upper95']
   class.level.moderators$r.median[i] <- class.level.moderators$mcmc[[i]]$summaries['r.sq','Median']
 }
+```
 
-#class.level.moderators %>%
-#  mutate(r.low = map(mcmc, function(x){ return(x$mcmc[[1]]$summaries['r.sq','Lower95'] )})) %>%
-#  mutate(r.high = map(mcmc, function(x){  return(x$mcmc[[1]]$summaries['r.sq','Upper95'] )})) %>%
-#  mutate(r.median = map(mcmc, function(x){ return(x$mcmc[[1]]$summaries['r.sq','Median'] )})) 
-  
+Plot class-level moderators
+
+```{r}
+ggplot(class.level.moderators, aes(x=r.median, xmin=r.low, xmax=r.high, y=moderator))+
+  geom_vline(xintercept=0, linetype='dashed') +
+  geom_errorbarh()+
+  geom_point()+
+  labs(y="Moderator", x="Bayes R2")+
+  theme_minimal()+
+  theme(strip.background = element_blank(), strip.text = element_blank())
 ```
 
 ## Student Level

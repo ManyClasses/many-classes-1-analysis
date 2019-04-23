@@ -22,7 +22,7 @@ model {
   }
   for(c in 1:n.classes){
     # the mean of the class distribution is sampled from a condition-specific normal, with moderator effect.
-    mu.class[c] ~ dnorm(mu[c] , sigma.condition.effect[class.condition[c]])
+    mu.class[c] ~ dnorm(mu[c] , 1 / sigma.condition.effect[class.condition[c]] ^ 2)
     
     # intercept of the above normal dist should be condition specific
     # moderator effect should have condition specific value, with sd
@@ -38,9 +38,8 @@ model {
     mu.condition.effect[i] ~ dnorm(0,1)
     sigma.condition.effect[i] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
     for(l in 1:n.moderator.levels){
-      moderator.effect[i,l] ~ dnorm(0, moderator.sd[i])
+      moderator.effect[i,l] ~ dnorm(0, 1)
     }
-    moderator.sd[i] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1; this is probably not wide enough?
   }
   # prior distribution for the gamma defining sd of classes
   ra.sigma.class <- (sigma.mode + sqrt(sigma.mode^2 + 4*sigma.sd^2)) / (2 * sigma.sd^2)
@@ -50,10 +49,7 @@ model {
   sigma.sd ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
   
   # computed bayesian r2 (http://www.stat.columbia.edu/~gelman/research/unpublished/bayes_R2.pdf)
-  residuals <- mu.class - mu
-  var.predict <- sd(mu) ^ 2
-  var.residuals <- sd(residuals) ^ 2
-  s <- var.predict + var.residuals
-  r.sq <- var.predict / (s+0.000000000001)
-  
+  # for each condition
+  r.sq[1] <- sd(mu[no.incentive.classes])^2 / ( sd(mu[no.incentive.classes])^2 + sd(mu.class[no.incentive.classes] - mu[no.incentive.classes])^2 + 0.00000000000001 )
+  r.sq[2] <- sd(mu[incentive.classes])^2 / ( sd(mu[incentive.classes])^2 + sd(mu.class[incentive.classes] - mu[incentive.classes])^2 + 0.00000000000001 )
 }

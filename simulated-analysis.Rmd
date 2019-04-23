@@ -9,10 +9,12 @@ library(tidyr)
 library(dplyr)
 library(ggplot2)
 library(ggridges)
+library(ggstance)
 library(stringr)
 library(tibble)
 library(forcats)
 library(purrr)
+library(tidybayes)
 ```
 
 # Generating Fake Data
@@ -20,7 +22,7 @@ library(purrr)
 To simulate the analysis, we generate data that has the same structure as the eventual ManyClasses 1 data. These are the parameters of that data generating process.
 
 ```{r}
-n.classes <- 40
+n.classes <- 50
 ```
 
 Generate a data frame of classes with random values for each factor.
@@ -28,7 +30,7 @@ Generate a data frame of classes with random values for each factor.
 ```{r}
 classes <- data.frame(
   class.id=1:n.classes,
-  incentive=factor(sample(c("Incentive", "NoIncentive"), n.classes, replace=T), levels=c("NoIncentive", "Incentive")),
+  incentive=factor(sample(c("Incentive", "No Incentive"), n.classes, replace=T), levels=c("No Incentive", "Incentive")),
   discipline=factor(sample(c("STEM", "Non-STEM"), n.classes, replace=T), levels=c("Non-STEM", "STEM")),
   format=factor(sample(c("Classroom", "Online", "Hybrid"), n.classes, replace=T), levels=c("Classroom", "Hybrid", "Online")),
   class.size=rbinom(n.classes, 150, 0.5),
@@ -36,7 +38,7 @@ classes <- data.frame(
   n.assignments=2+rbinom(n.classes, 10, 0.1),
   class.level=factor(sample(c("Intro","Intermediate","Advanced"), n.classes, replace=T), levels=c("Intro", "Intermediate", "Advanced")),
   n.exams=2+sample(c(0,2),n.classes, prob = c(0.8, 0.2), replace=T),
-  admission.rate=rbeta(n.classes,5,2)
+  admission.rate=rbeta(n.classes,3,2)
 )
 ```
 
@@ -74,10 +76,46 @@ Generating moderator variables for students
 
 ```{r}
 student.data <- student.data %>% mutate(
-  access.assignment = sample(c("No", "Yes"), n(), replace=T, prob=c(0.1, 0.9)),
-  time.spent.on.assignment = rgamma(n(), 10)
+  #access.assignment = sample(c("No", "Yes"), n(), replace=T, prob=c(0.1, 0.9)),
+  cumulative.assignment.time = rgamma(n(), 10),
+  cumulative.feedback.time = rgamma(n(),10),
+  cumulative.canvas.grade = rnorm(n(), 0, 1), # normalized
+  submission.days.early = runif(n(),0,5),
+  feedback.delay = runif(n(),1,10)
 )
 ```
+
+Join the class moderators to the student data
+
+```{r}
+student.class.data <- student.data %>%
+  left_join(classes, by="class.id")
+```
+
+Add effects to the data
+
+```{r}
+# overall effect of feedback
+student.class.data <- student.class.data %>%
+  mutate(delta.z = delta.z + rnorm(n(),0.2,1))
+
+# classroom-level discrete moderator
+student.class.data <- student.class.data %>%
+  mutate(delta.z = case_when(
+    class.level=="Intro" ~ delta.z + rnorm(n(), -0.1, 1),
+    class.level=="Intermediate" ~ delta.z + rnorm(n(), 0, 1),
+    class.level=="Advanced" ~ delta.z + rnorm(n(), 0.1, 1)
+  ))
+
+# classroom-level continuous moderator
+student.class.data <- student.class.data %>%
+  mutate(delta.z = delta.z + (admission.rate - 0.5) + rnorm(n(), 0, 1))
+
+# student-level continuous moderator
+student.class.data <- student.class.data %>%
+  mutate(delta.z = delta.z + 0.25 * cumulative.canvas.grade + rnorm(n(), 0, 0.5))
+```
+
 
 # Preparing Data for Model
 
@@ -85,9 +123,9 @@ The data needs to be reformatted for the JAGS model.
 
 ```{r}
 # summaries for JAGS
-delta.z <- student.data$delta.z
-n.students <- nrow(student.data)
-class.index <- student.data$class.id
+delta.z <- student.class.data$delta.z
+n.students <- nrow(student.class.data)
+class.index <- student.class.data$class.id
 class.condition <- as.numeric(classes$incentive)
 n.conditions <- 2
 
@@ -111,57 +149,74 @@ runjags.options(force.summary=TRUE, silent.jags=TRUE, silent.runjags=TRUE)
 
 ## Running the Model
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 model.1.result <- run.jags(
   model='basic-model-jags.txt', 
   data=jags.data,
   n.chains = 3,
   sample = 1000,
   burnin = 1000,
-  monitor = c('mu.class','sigma.class', 'mu.condition.effect', 'sigma.condition.effect', 'sigma.mode', 'sigma.sd', 'mu.condition.diff')
+  monitor = c('mu.class','sigma.class', 'mu.condition.effect', 'sigma.condition.effect', 'sigma.mode', 'sigma.sd', 'mu.condition.diff', 'mu.condition.average')
 )
 ```
 
 ## Class-level effect of feedback and incentive
 
-Start with merging the model results with the class-level data, and adding columns to differentiate parameters of the model.
-
-```{r message=FALSE, warning=FALSE}
-model.1.summary <- as.data.frame(model.1.result$summaries)
-model.1.summary <- model.1.summary %>%
-  rownames_to_column() %>%
-  remove_rownames() %>%
-  mutate(parameter = str_remove(rowname, "\\[.*\\]")) %>%
-  mutate(class.id = as.numeric(if_else(parameter %in% c("mu.class", "sigma.class"), str_extract(rowname, "[0-9]+"), "NA"))) %>%
-  mutate(i.condition = as.numeric(if_else(parameter %in% c("mu.condition.effect", "sigma.condition.effect"), str_extract(rowname, "[0-9]+"), "NA"))) %>%
-  left_join(classes) %>%
-  mutate(i.merge = if_else(!is.na(i.condition), i.condition, as.numeric(incentive))) %>%
-  mutate(incentive = factor(i.merge, labels = c("No Incentive","Incentive"))) %>%
-  select(-i.merge, -i.condition)
-```
-
-Plot 95% HDI for each class, and overall estimate for two conditions.
-
 ```{r fig.height=7, fig.width=7}
-model.1.summary %>% 
-  filter(parameter %in% c("mu.class", "mu.condition.effect")) %>% 
-  mutate(y.label = factor(if_else(is.na(class.id), as.character(incentive), as.character(class.id)))) %>%
-  mutate(y.label = fct_reorder(y.label, Mean)) %>%
-ggplot(aes(x=Mean, xmin=Lower95, xmax=Upper95, y=y.label, color=incentive))+
+tidy.model.1.summary <- model.1.result %>%
+  gather_draws(mu.class[class.id], mu.condition.effect[incentive], mu.condition.average) %>%
+  median_hdi(.width = c(0.5,0.95)) %>%
+  left_join(classes, by=c("class.id")) %>%
+  mutate(incentive.y = as.character(incentive.y)) %>%
+  mutate(incentive = case_when(
+    .variable == "mu.condition.average" ~ "z",
+    incentive.x == 1 ~ "No Incentive",
+    incentive.x == 2 ~ "Incentive",
+    is.na(incentive.x) ~ incentive.y
+  )) %>%
+  select(-incentive.x, -incentive.y) %>%
+  mutate(y.label = case_when(
+    .variable == 'mu.condition.average' ~ "Overall Effect",
+    is.na(class.id) ~ incentive,
+    !is.na(class.id) ~ as.character(class.id)
+  )) %>%
+  ungroup() %>%
+  mutate(.variable = factor(.variable, levels=c('mu.class', 'mu.condition.effect', 'mu.condition.average'))) %>%
+  mutate(y.label = factor(y.label)) %>%
+  mutate(y.label = fct_reorder(y.label, .value))
+  
+ggplot(tidy.model.1.summary, aes(x=.value, y=y.label, xmin=.lower, xmax=.upper, color=incentive))+
   geom_vline(xintercept=0, linetype='dashed') +
-  geom_errorbarh()+
-  geom_point()+
+  geom_pointintervalh(shape=15) +
   labs(y="Class ID", x="Relative Benefit of Immediate Feedback")+
-  facet_grid(parameter~., scales = 'free', space='free')+
-  scale_color_brewer(name="Incentive Condition", type="qual", palette = "Set1")+
+  facet_grid(.variable~., scales = 'free', space='free')+
+  scale_color_manual(name="Incentive Condition", breaks=c("No Incentive", "Incentive"), labels=c("No Incentive", "Incentive", NULL), values=c("#377eb8", "#e41a1c", "Black"))+
   theme_minimal()+
   theme(strip.background = element_blank(), strip.text = element_blank())
 ```
 
-Summary stats on difference between Incentive and No Incentive, as estimated by model.
+Summary stats on difference between Incentive and No Incentive estimated by model.
 
 ```{r}
-model.1.summary %>% filter(parameter == 'mu.condition.diff')
+model.1.result %>% 
+  gather_draws(mu.condition.diff, mu.condition.average) %>%
+  median_hdi(.width = c(0.95))
+```
+
+Quick plot of Means and SEs without model estimation, to illustrate degree of shrinkage.
+
+```{r}
+student.class.data %>% 
+  group_by(class.id) %>% 
+  summarise(m = mean(delta.z), se=sd(delta.z)/sqrt(n())) %>%
+  left_join(classes, by="class.id") %>%
+  mutate(class.id = factor(class.id)) %>%
+  mutate(class.id = fct_reorder(class.id, m)) %>%
+  ggplot(aes(x=m, xmin=m-se, xmax = m+se, y=class.id, color=incentive)) +
+  geom_vline(xintercept=0, linetype='dashed') +
+  geom_errorbarh()+
+  scale_color_brewer(type="qual", palette = "Set1")+
+  theme_minimal()
 ```
 
 # Heterogeneity Analysis
@@ -187,7 +242,9 @@ estimate.class.moderator.effect <- function(moderator.name){
     class.condition=class.condition,
     n.conditions=n.conditions,
     n.classes=n.classes,
-    moderator.level = as.numeric(classes[[moderator.name]])
+    moderator.level = as.numeric(classes[[moderator.name]]),
+    no.incentive.classes = which(class.condition==1),
+    incentive.classes = which(class.condition==2)
   )
   
   if(is.numeric(classes[[moderator.name]])){
@@ -201,56 +258,144 @@ estimate.class.moderator.effect <- function(moderator.name){
     model=model, 
     data=jags.data.moderator,
     n.chains = 3,
-    sample = 1000,
+    sample = 3000,
     burnin = 1000,
-    monitor = c('mu.class','sigma.class', 'mu.condition.effect', 'sigma.condition.effect', 'sigma.mode', 'sigma.sd', 'moderator.effect', 'moderator.sd', 'var.predict', 'var.residuals', 'r.sq')
+    monitor = c('mu.class','sigma.class', 'mu.condition.effect', 'sigma.condition.effect', 'sigma.mode', 'sigma.sd', 'moderator.effect', 'r.sq')
   )
   
-  return(list(result=model.moderator.result))
+  df <- model.moderator.result %>%
+    gather_draws(r.sq[incentive], sigma.condition.effect[incentive]) %>%
+    median_hdci(.value, .width=c(0.5,0.95)) %>%
+    mutate(moderator = moderator.name)
+  
+  return(df)
 }
 ```
 
 Iterate through moderators and run the models.
 
-```{r}
+```{r message=FALSE, warning=FALSE}
+class.level.moderators <- colnames(classes)[3:length(colnames(classes))]
 
-#m1 <- estimate.class.moderator.effect('admission.rate')
-
-
-class.level.moderators <- data.frame(moderator = colnames(classes)[3:length(colnames(classes))])
-class.level.moderators$moderator <- as.character(class.level.moderators$moderator)
-
-class.level.moderators <- class.level.moderators %>% 
-  #filter(moderator %in% c('discipline', 'class.level', 'format')) %>% 
-  group_by(moderator) %>%
-  mutate(mcmc = estimate.class.moderator.effect(moderator[1])) %>%
-  ungroup()
-
-# I can't figure out how to do this within dplyr...
-
-class.level.moderators$r.low <- 0
-class.level.moderators$r.high <- 0
-class.level.moderators$r.median <- 0
-
-for(i in 1:nrow(class.level.moderators)){
-  class.level.moderators$r.low[i] <- class.level.moderators$mcmc[[i]]$summaries['r.sq','Lower95']
-  class.level.moderators$r.high[i] <- class.level.moderators$mcmc[[i]]$summaries['r.sq','Upper95']
-  class.level.moderators$r.median[i] <- class.level.moderators$mcmc[[i]]$summaries['r.sq','Median']
+class.moderator.estimates <- NA
+for(m in class.level.moderators){
+  md <- estimate.class.moderator.effect(m)
+  if(is.na(class.moderator.estimates)){
+    class.moderator.estimates <- md
+  } else {
+    class.moderator.estimates <- rbind(class.moderator.estimates, md)
+  }
 }
 ```
 
 Plot class-level moderators
 
 ```{r}
-ggplot(class.level.moderators, aes(x=r.median, xmin=r.low, xmax=r.high, y=moderator))+
-  geom_vline(xintercept=0, linetype='dashed') +
-  geom_errorbarh()+
-  geom_point()+
+ggplot(class.moderator.estimates %>% filter(.variable=="r.sq"), aes(x=.value, xmin=.lower, xmax=.upper, y=moderator, color=factor(incentive)))+
+  geom_pointintervalh(shape=15, position = position_dodgev(height=0.3)) +
   labs(y="Moderator", x="Bayes R2")+
   theme_minimal()+
   theme(strip.background = element_blank(), strip.text = element_blank())
 ```
 
+```{r}
+ggplot(class.moderator.estimates %>% filter(.variable=="sigma.condition.effect"), aes(x=.value, xmin=.lower, xmax=.upper, y=moderator, color=factor(incentive)))+
+  geom_pointintervalh(shape=15, position = ggstance::position_dodgev(height = 0.4)) +
+  labs(y="Moderator", x="SD of Classroom-level estimates around moderator")+
+  theme_minimal()+
+  theme(strip.background = element_blank(), strip.text = element_blank())
+```
+
 ## Student Level
+
+```{r}
+estimate.student.moderator.effect <- function(moderator.name){
+  
+  print(moderator.name)
+  
+  if(!moderator.name %in% colnames(student.data)) {
+    stop(paste0("Moderator '", moderator.name, "' does not appear in student.data data frame"))
+  }
+  
+  # packaging data for JAGS
+  jags.data.moderator <- list(
+    delta.z=delta.z,
+    n.students=n.students,
+    class.index=class.index,
+    class.condition=class.condition,
+    n.conditions=n.conditions,
+    n.classes=n.classes,
+    moderator.level = as.numeric(student.data[[moderator.name]]),
+    no.incentive.classes = which(class.condition==1),
+    incentive.classes = which(class.condition==2)
+  )
+  
+  if(is.numeric(student.data[[moderator.name]])){
+    model <- 'cont-student-moderator-model-jags.txt'
+  } else {
+    model <- 'disc-student-moderator-model-jags.txt'
+    jags.data.moderator$n.moderator.levels = length(levels(classes[[moderator.name]]))
+  }
+  
+  model.moderator.result <- run.jags(
+    model=model, 
+    data=jags.data.moderator,
+    n.chains = 3,
+    sample = 3000,
+    burnin = 1000,
+    monitor = c('mu.class','sigma.class', 'mu.condition.effect', 'sigma.condition.effect', 'sigma.mode', 'sigma.sd', 'moderator.effect', 'r.sq')
+  )
+  
+  df <- model.moderator.result %>%
+    gather_draws(r.sq[incentive], sigma.condition.effect[incentive]) %>%
+    median_hdci(.value, .width=c(0.5,0.95)) %>%
+    mutate(moderator = moderator.name)
+  
+  return(df)
+}
+```
+
+```{r message=FALSE, warning=FALSE}
+student.level.moderators <- colnames(student.data)[6:length(colnames(student.data))]
+
+student.moderator.estimates <- NA
+for(m in student.level.moderators){
+  md <- estimate.student.moderator.effect(m)
+  if(is.na(student.moderator.estimates)){
+    student.moderator.estimates <- md
+  } else {
+    student.moderator.estimates <- rbind(student.moderator.estimates, md)
+  }
+}
+```
+
+Plot student-level moderators
+
+```{r}
+ggplot(student.moderator.estimates %>% filter(.variable=="r.sq"), aes(x=.value, xmin=.lower, xmax=.upper, y=moderator, color=factor(incentive)))+
+  geom_pointintervalh(shape=15, position = position_dodgev(height=0.3)) +
+  labs(y="Moderator", x="Bayes R2")+
+  theme_minimal()+
+  theme(strip.background = element_blank(), strip.text = element_blank())
+```
+
+# Plotting individual moderators
+
+## Classroom-level
+
+```{r}
+ggplot(student.class.data %>% 
+         group_by(class.id, admission.rate, incentive) %>% 
+         summarize(m=mean(delta.z), se=sd(delta.z)/sqrt(n())),
+  aes(x=admission.rate, y=m, ymin=m-se, ymax=m+se, color=incentive)) +
+  geom_pointrange()
+```
+
+## Student-level
+
+```{r}
+ggplot(student.class.data, aes(x=cumulative.canvas.grade, y=delta.z, color=incentive))+
+  geom_point()
+```
 
 

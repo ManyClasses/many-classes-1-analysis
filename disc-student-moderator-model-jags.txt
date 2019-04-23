@@ -18,19 +18,12 @@
 model {
   for(s in 1:n.students){
     # student performance is sampled from a normal distribution that is specific to each class
-    delta.z[s] ~ dnorm(mu.class[class.index[s]], 1 / sigma.class[class.index[s]] ^ 2)
+    delta.z[s] ~ dnorm(mu[s], 1 / sigma.class[class.index[s]] ^ 2)
+    mu[s] <- mu.class[class.index[s]] + moderator.effect[class.condition[class.index[s]], moderator.level[s]]
   }
   for(c in 1:n.classes){
     # the mean of the class distribution is sampled from a condition-specific normal, with moderator effect.
-    mu.class[c] ~ dnorm(mu[c] , 1 / sigma.condition.effect[class.condition[c]] ^ 2)
-    
-    # normalize the moderator
-    moderator.z[c] <- (moderator.level[c] - mean(moderator.level[1:n.classes])) / sd(moderator.level[1:n.classes]) 
-    # intercept of the above normal dist should be condition specific
-    # moderator effect should have condition specific value, with sd
-    # coefficient of variation is sd of moderator / value of intercept param
-    # will get two of these, one for each incentive condition.
-    mu[c] <- mu.condition.effect[class.condition[c]] + moderator.effect[class.condition[c]] * moderator.z[c]
+    mu.class[c] ~ dnorm(mu.condition.effect[class.condition[c]] , 1 / sigma.condition.effect[class.condition[c]] ^ 2)
     
     # the sd of the class distribution is sampled from a gamma
     sigma.class[c] ~ dgamma(sh.sigma.class, ra.sigma.class)
@@ -39,7 +32,10 @@ model {
     # prior distribution for the condition-specific mu normal
     mu.condition.effect[i] ~ dnorm(0,1)
     sigma.condition.effect[i] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
-    moderator.effect[i] ~ dnorm(0, 1)
+    for(l in 1:n.moderator.levels){
+      moderator.effect[i,l] ~ dnorm(0, 1 / moderator.sd[i]^2)
+    }
+    moderator.sd[i] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1; this is probably not wide enough?
   }
   # prior distribution for the gamma defining sd of classes
   ra.sigma.class <- (sigma.mode + sqrt(sigma.mode^2 + 4*sigma.sd^2)) / (2 * sigma.sd^2)
@@ -49,7 +45,10 @@ model {
   sigma.sd ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
   
   # computed bayesian r2 (http://www.stat.columbia.edu/~gelman/research/unpublished/bayes_R2.pdf)
-  r.sq[1] <- sd(mu[no.incentive.classes])^2 / (sd(mu[no.incentive.classes])^2 + sd(mu.class[no.incentive.classes] - mu[no.incentive.classes])^2 + 0.00000000000001)
-  r.sq[2] <- sd(mu[incentive.classes])^2 / (sd(mu[incentive.classes])^2 + sd(mu.class[incentive.classes] - mu[incentive.classes])^2 + 0.00000000000001)
+  residuals <- mu.class - mu
+  var.predict <- sd(mu) ^ 2
+  var.residuals <- sd(residuals) ^ 2
+  s <- var.predict + var.residuals
+  r.sq <- var.predict / (s+0.000000000001)
   
 }

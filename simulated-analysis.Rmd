@@ -221,6 +221,14 @@ student.class.data %>%
 
 # Heterogeneity Analysis
 
+```{r}
+model.1.h.tidy <- model.1.result %>% gather_draws(sigma.condition.effect[incentive])
+
+model.1.h.tidy %>% median_hdi(.width = c(0.95))
+```
+
+# Moderator Analysis
+
 ## Class Level
 
 Create a function to pick the correct model and pass in the correct data values.
@@ -384,11 +392,75 @@ ggplot(student.moderator.estimates %>% filter(.variable=="r.sq"), aes(x=.value, 
 ## Classroom-level
 
 ```{r}
-ggplot(student.class.data %>% 
-         group_by(class.id, admission.rate, incentive) %>% 
-         summarize(m=mean(delta.z), se=sd(delta.z)/sqrt(n())),
-  aes(x=admission.rate, y=m, ymin=m-se, ymax=m+se, color=incentive)) +
-  geom_pointrange()
+estimate.class.moderator.effect.full <- function(moderator.name){
+  
+  print(moderator.name)
+  
+  if(!moderator.name %in% colnames(classes)) {
+    stop(paste0("Moderator '", moderator.name, "' does not appear in classes data frame"))
+  }
+  
+  # packaging data for JAGS
+  jags.data.moderator <- list(
+    delta.z=delta.z,
+    n.students=n.students,
+    class.index=class.index,
+    class.condition=class.condition,
+    n.conditions=n.conditions,
+    n.classes=n.classes,
+    moderator.level = as.numeric(classes[[moderator.name]]),
+    no.incentive.classes = which(class.condition==1),
+    incentive.classes = which(class.condition==2)
+  )
+  
+  if(is.numeric(classes[[moderator.name]])){
+    model <- 'cont-moderator-model-jags.txt'
+  } else {
+    model <- 'disc-moderator-model-jags.txt'
+    jags.data.moderator$n.moderator.levels = length(levels(classes[[moderator.name]]))
+  }
+  
+  model.moderator.result <- run.jags(
+    model=model, 
+    data=jags.data.moderator,
+    n.chains = 3,
+    sample = 3000,
+    burnin = 1000,
+    monitor = c('mu.class','sigma.class', 'mu.condition.effect', 'sigma.condition.effect', 'sigma.mode', 'sigma.sd', 'moderator.effect', 'r.sq')
+  )
+  
+  return(model.moderator.result)
+}
+```
+
+```{r}
+moderator.name <- 'admission.rate'
+
+moderator.model.results <- estimate.class.moderator.effect.full(moderator.name)
+
+#df <- model.moderator.result %>% spread_draws(mu.class[class.id], mu.condition.effect[incentive], sigma.condition.effect[incentive], moderator.effect[incentive]) 
+
+# todo: convert standardized regression coefficient back to normal scale.
+# need to convert intercept because it is intercept when Z = 0, not un.z = 0
+
+model.class.estimates <- moderator.model.results %>%
+  gather_draws(mu.class[class.id]) %>%
+  median_hdi(.width = c(0.5, 0.95)) %>%
+  left_join(classes, by="class.id")
+
+model.moderator.estimates <- moderator.model.results %>%
+  spread_draws(mu.condition.effect[incentive], moderator.effect[incentive]) %>%
+  mutate(moderator.effect.un.z = moderator.effect * sd(classes[[moderator.name]]) + mean(classes[[moderator.name]])) %>%
+  mutate(mu.condition.effect.un.z = mu.condition.effect - mean(classes[[moderator.name]])) %>%
+  group_by(incentive) %>%
+  sample_n(20)
+  
+
+ggplot(model.class.estimates, aes(x=admission.rate, y=.value, ymin=.lower, ymax=.upper, color=incentive)) +
+  geom_pointinterval() +
+  geom_abline(data=model.moderator.estimates,
+              aes(intercept = mu.condition.effect.un.z, slope=moderator.effect.un.z, color=factor(incentive)),
+              alpha=0.2)
 ```
 
 ## Student-level

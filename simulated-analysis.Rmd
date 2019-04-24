@@ -450,8 +450,8 @@ model.class.estimates <- moderator.model.results %>%
 
 model.moderator.estimates <- moderator.model.results %>%
   spread_draws(mu.condition.effect[incentive], moderator.effect[incentive]) %>%
-  mutate(moderator.effect.un.z = moderator.effect * sd(classes[[moderator.name]]) + mean(classes[[moderator.name]])) %>%
-  mutate(mu.condition.effect.un.z = mu.condition.effect - mean(classes[[moderator.name]])) %>%
+  mutate(moderator.effect.un.z = moderator.effect / sd(classes[[moderator.name]])) %>%
+  mutate(mu.condition.effect.un.z = mu.condition.effect - moderator.effect * mean(classes[[moderator.name]])/sd(classes[[moderator.name]])) %>%
   group_by(incentive) %>%
   sample_n(20)
   

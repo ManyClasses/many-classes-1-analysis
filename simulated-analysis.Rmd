@@ -102,9 +102,9 @@ student.class.data <- student.class.data %>%
 # classroom-level discrete moderator
 student.class.data <- student.class.data %>%
   mutate(delta.z = case_when(
-    class.level=="Intro" ~ delta.z + rnorm(n(), -0.1, 1),
+    class.level=="Intro" ~ delta.z + rnorm(n(), -0.3, 1),
     class.level=="Intermediate" ~ delta.z + rnorm(n(), 0, 1),
-    class.level=="Advanced" ~ delta.z + rnorm(n(), 0.1, 1)
+    class.level=="Advanced" ~ delta.z + rnorm(n(), 0.3, 1)
   ))
 
 # classroom-level continuous moderator
@@ -112,8 +112,8 @@ student.class.data <- student.class.data %>%
   mutate(delta.z = delta.z + (admission.rate - 0.5) + rnorm(n(), 0, 1))
 
 # student-level continuous moderator
-student.class.data <- student.class.data %>%
-  mutate(delta.z = delta.z + 0.25 * cumulative.canvas.grade + rnorm(n(), 0, 0.5))
+student.class.data <- student.class.data %>% 
+  mutate(delta.z = delta.z + 0.2 * cumulative.canvas.grade + rnorm(n(), 0, 0.5))
 ```
 
 
@@ -236,7 +236,7 @@ Create a function to pick the correct model and pass in the correct data values.
 ```{r}
 estimate.class.moderator.effect <- function(moderator.name, summarize=TRUE){
   
-  print(moderator.name)
+  #print(moderator.name)
   
   if(!moderator.name %in% colnames(classes)) {
     stop(paste0("Moderator '", moderator.name, "' does not appear in classes data frame"))
@@ -306,6 +306,7 @@ Plot class-level moderators
 ggplot(class.moderator.estimates %>% filter(.variable=="r.sq"), aes(x=.value, xmin=.lower, xmax=.upper, y=moderator, color=factor(incentive)))+
   geom_pointintervalh(shape=15, position = position_dodgev(height=0.3)) +
   labs(y="Moderator", x="Bayes R2")+
+  scale_color_brewer(name="Incentive Condition", labels=c("Non-incentivized", "Incentivized"), type="qual", palette = "Set1")+
   theme_minimal()+
   theme(strip.background = element_blank(), strip.text = element_blank())
 ```
@@ -314,6 +315,7 @@ ggplot(class.moderator.estimates %>% filter(.variable=="r.sq"), aes(x=.value, xm
 ggplot(class.moderator.estimates %>% filter(.variable=="sigma.condition.effect"), aes(x=.value, xmin=.lower, xmax=.upper, y=moderator, color=factor(incentive)))+
   geom_pointintervalh(shape=15, position = ggstance::position_dodgev(height = 0.4)) +
   labs(y="Moderator", x="SD of Classroom-level estimates around moderator")+
+  scale_color_brewer(name="Incentive Condition", labels=c("Non-incentivized", "Incentivized"), type="qual", palette = "Set1")+
   theme_minimal()+
   theme(strip.background = element_blank(), strip.text = element_blank())
 ```
@@ -323,10 +325,10 @@ ggplot(class.moderator.estimates %>% filter(.variable=="sigma.condition.effect")
 ```{r}
 estimate.student.moderator.effect <- function(moderator.name, summarize=TRUE){
   
-  print(moderator.name)
+  #print(moderator.name)
   
-  if(!moderator.name %in% colnames(student.data)) {
-    stop(paste0("Moderator '", moderator.name, "' does not appear in student.data data frame"))
+  if(!moderator.name %in% colnames(student.class.data)) {
+    stop(paste0("Moderator '", moderator.name, "' does not appear in student.class.data data frame"))
   }
   
   # packaging data for JAGS
@@ -337,16 +339,16 @@ estimate.student.moderator.effect <- function(moderator.name, summarize=TRUE){
     class.condition=class.condition,
     n.conditions=n.conditions,
     n.classes=n.classes,
-    moderator.level = as.numeric(student.data[[moderator.name]]),
+    moderator.level = as.numeric(student.class.data[[moderator.name]]),
     no.incentive.classes = which(class.condition==1),
     incentive.classes = which(class.condition==2)
   )
   
-  if(is.numeric(student.data[[moderator.name]])){
+  if(is.numeric(student.class.data[[moderator.name]])){
     model <- 'cont-student-moderator-model-jags.txt'
   } else {
     model <- 'disc-student-moderator-model-jags.txt'
-    jags.data.moderator$n.moderator.levels = length(levels(classes[[moderator.name]]))
+    jags.data.moderator$n.moderator.levels = length(levels(student.class.data[[moderator.name]]))
   }
   
   model.moderator.result <- run.jags(
@@ -391,6 +393,7 @@ Plot student-level moderators
 ggplot(student.moderator.estimates %>% filter(.variable=="r.sq"), aes(x=.value, xmin=.lower, xmax=.upper, y=moderator, color=factor(incentive)))+
   geom_pointintervalh(shape=15, position = position_dodgev(height=0.3)) +
   labs(y="Moderator", x="Bayes R2")+
+  scale_color_brewer(name="Incentive Condition", labels=c("Non-incentivized", "Incentivized"), type="qual", palette = "Set1")+
   theme_minimal()+
   theme(strip.background = element_blank(), strip.text = element_blank())
 ```
@@ -399,10 +402,40 @@ ggplot(student.moderator.estimates %>% filter(.variable=="r.sq"), aes(x=.value, 
 
 ## Classroom-level
 
-
+### Continuous
 
 ```{r}
 moderator.name <- 'admission.rate'
+
+moderator.model.results <- estimate.class.moderator.effect(moderator.name, summarize=FALSE)
+
+model.class.estimates <- moderator.model.results %>%
+  gather_draws(mu.class[class.id]) %>%
+  median_hdi(.width = c(0.5, 0.95)) %>%
+  left_join(classes, by="class.id")
+
+model.moderator.estimates <- moderator.model.results %>%
+  spread_draws(mu.condition.effect[incentive], moderator.effect[incentive]) %>%
+  mutate(slope = moderator.effect / sd(classes[[moderator.name]])) %>%
+  mutate(intercept = mu.condition.effect - moderator.effect * mean(classes[[moderator.name]])/sd(classes[[moderator.name]])) %>%
+  ungroup() %>%
+  mutate(incentive = factor(incentive, labels=c("No Incentive", "Incentive"))) %>%
+  group_by(incentive) %>%
+  sample_n(20)
+  
+ggplot(model.class.estimates, aes(x=admission.rate, y=.value, ymin=.lower, ymax=.upper, color=incentive)) +
+  geom_pointinterval(alpha=0.5) +
+  geom_abline(data=model.moderator.estimates, aes(intercept = intercept, slope=slope, color=factor(incentive)), alpha=0.2) +
+  labs(x="University Admission Rate", y="Model estimate of classroom average")+
+  scale_color_brewer(type="qual", palette = "Set1", name="Incentive Condition")+
+  theme_bw()
+```
+
+### Discrete
+
+
+```{r}
+moderator.name <- 'class.level'
 
 moderator.model.results <- estimate.class.moderator.effect(moderator.name, summarize=FALSE)
 
@@ -413,46 +446,52 @@ moderator.model.results <- estimate.class.moderator.effect(moderator.name, summa
 
 model.class.estimates <- moderator.model.results %>%
   gather_draws(mu.class[class.id]) %>%
-  median_hdi(.width = c(0.5, 0.95)) %>%
+  median_hdi(.width = c(0.95)) %>%
   left_join(classes, by="class.id")
 
 model.moderator.estimates <- moderator.model.results %>%
-  spread_draws(mu.condition.effect[incentive], moderator.effect[incentive]) %>%
-  mutate(moderator.effect.un.z = moderator.effect / sd(classes[[moderator.name]])) %>%
-  mutate(mu.condition.effect.un.z = mu.condition.effect - moderator.effect * mean(classes[[moderator.name]])/sd(classes[[moderator.name]])) %>%
+  spread_draws(mu.condition.effect[incentive], moderator.effect[incentive, moderator.level]) %>%
   ungroup() %>%
   mutate(incentive = factor(incentive, labels=c("No Incentive", "Incentive"))) %>%
-  group_by(incentive) %>%
+  mutate(class.level = factor(moderator.level, labels=c("Intro", "Intermediate", "Advanced"))) %>%
+  group_by(incentive, class.level) %>%
   sample_n(20)
   
-ggplot(model.class.estimates, aes(x=admission.rate, y=.value, ymin=.lower, ymax=.upper, color=incentive)) +
-  geom_pointinterval() +
-  geom_abline(data=model.moderator.estimates, aes(intercept = mu.condition.effect.un.z, slope=moderator.effect.un.z, color=factor(incentive)), alpha=0.2) +
+ggplot(model.class.estimates, aes(x=class.level, y=.value, ymin=.lower, ymax=.upper, color=incentive)) +
+  geom_pointinterval(position=position_jitterdodge(), alpha=0.2) +
+  geom_crossbar(data=model.moderator.estimates, aes(x=class.level, y = mu.condition.effect + moderator.effect, color=incentive, ymin=..y.., ymax=..y..), position=position_dodge(width=0.75), width=0.5, size=0.1) +
   labs(x="University Admission Rate", y="Model estimate of classroom average")+
   scale_color_brewer(type="qual", palette = "Set1", name="Incentive Condition")+
   theme_bw()
 ```
 
+
 ## Student-level
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 student.moderator.name <- 'cumulative.canvas.grade'
 
 student.moderator.model.results <- estimate.student.moderator.effect(student.moderator.name, summarize=FALSE)
 
-model.moderator.estimates <- student.moderator.model.results %>%
-  spread_draws(mu.condition.effect[incentive], moderator.effect[incentive]) %>%
-  mutate(moderator.effect.un.z = moderator.effect / sd(classes[[moderator.name]])) %>%
-  mutate(mu.condition.effect.un.z = mu.condition.effect - moderator.effect * mean(classes[[moderator.name]])/sd(classes[[moderator.name]])) %>%
+student.model.moderator.estimates <- student.moderator.model.results %>%
+  spread_draws(mu.class[class.id], moderator.effect[incentive]) %>%
+  group_by(class.id, incentive) %>%
+  sample_n(20) %>%
+  mutate(slope = moderator.effect / sd(student.class.data[[student.moderator.name]])) %>%
+  mutate(intercept = mu.class - moderator.effect * mean(student.class.data[[student.moderator.name]])/sd(student.class.data[[student.moderator.name]])) %>%
   ungroup() %>%
-  mutate(incentive = factor(incentive, labels=c("No Incentive", "Incentive"))) %>%
-  group_by(incentive) %>%
-  sample_n(20)
+  mutate(incentive.mcmc = factor(incentive, labels=c("No Incentive", "Incentive"))) %>%
+  select(-incentive) %>%
+  left_join(select(classes, class.id, incentive), by="class.id") %>%
+  filter(incentive == incentive.mcmc) %>%
+  select(-incentive.mcmc)
 
 ggplot(student.class.data, aes(x=cumulative.canvas.grade, y=delta.z, color=incentive))+
   facet_wrap(.~class.id)+
   scale_color_brewer(type="qual",palette = "Set1", name="Incentive Condition")+
-  geom_point(alpha=0.2)+
+  geom_point(alpha=0.1)+
+  geom_abline(data=student.model.moderator.estimates, aes(slope=slope, intercept=intercept, color=incentive), alpha=0.3)+
+  labs(x="Cumulative Course Grade", y="Observed delta-z")+
   theme_bw()+
   theme(strip.background = element_blank(), strip.text = element_blank())
 ```

@@ -383,6 +383,8 @@ estimate.student.moderator.effect <- function(moderator.name, summarize=TRUE){
     incentive.classes = which(class.condition==2)
   )
   
+  monitor.list <- c('mu.class','sigma.class', 'mu.condition.effect', 'sigma.condition.effect', 'sigma.mode', 'sigma.sd', 'moderator.effect', 'moderator.effect.class', 'moderator.effect.sigma', 'r.sq')
+  
   if(is.numeric(student.class.data[[moderator.name]])){
     model <- 'cont-student-moderator-model-jags.txt'
   } else {
@@ -396,7 +398,7 @@ estimate.student.moderator.effect <- function(moderator.name, summarize=TRUE){
     n.chains = 3,
     sample = 3000,
     burnin = 1000,
-    monitor = c('mu.class','sigma.class', 'mu.condition.effect', 'sigma.condition.effect', 'sigma.mode', 'sigma.sd', 'moderator.effect', 'r.sq')
+    monitor = monitor.list
   )
   
   if(summarize){
@@ -521,17 +523,13 @@ student.moderator.name <- 'cumulative.canvas.grade'
 student.moderator.model.results <- estimate.student.moderator.effect(student.moderator.name, summarize=FALSE)
 
 student.model.moderator.estimates <- student.moderator.model.results %>%
-  spread_draws(mu.class[class.id], moderator.effect[incentive]) %>%
-  group_by(class.id, incentive) %>%
+  spread_draws(mu.class[class.id], moderator.effect.class[class.id]) %>%
+  group_by(class.id) %>%
   sample_n(20) %>%
-  mutate(slope = moderator.effect / sd(student.class.data[[student.moderator.name]])) %>%
-  mutate(intercept = mu.class - moderator.effect * mean(student.class.data[[student.moderator.name]])/sd(student.class.data[[student.moderator.name]])) %>%
+  mutate(slope = moderator.effect.class / sd(student.class.data[[student.moderator.name]])) %>%
+  mutate(intercept = mu.class - moderator.effect.class * mean(student.class.data[[student.moderator.name]])/sd(student.class.data[[student.moderator.name]])) %>%
   ungroup() %>%
-  mutate(incentive.mcmc = factor(incentive, labels=c("Non-incentivized", "Incentivized"))) %>%
-  select(-incentive) %>%
-  left_join(select(classes, class.id, incentive), by="class.id") %>%
-  filter(incentive == incentive.mcmc) %>%
-  select(-incentive.mcmc)
+  left_join(select(classes, class.id, incentive), by="class.id")
 
 student.moderator.model.results %>%
   spread_draws(mu.class[class.id], moderator.effect[incentive]) %>%
@@ -549,6 +547,15 @@ ggplot(student.class.data, aes(x=cumulative.canvas.grade, y=delta.z, color=incen
   theme(strip.background = element_blank(), strip.text = element_blank(), panel.grid = element_blank())
 ```
 
+Examining the condition-level estimates of the moderator
+
+```{r}
+student.moderator.model.results %>%
+  spread_draws(moderator.effect[incentive]) %>%
+  mutate(slope = moderator.effect / sd(student.class.data[[student.moderator.name]])) %>%
+  median_hdci(slope, .width=.95)
+```
+
 ### Discrete
 
 ```{r message=FALSE, warning=FALSE}
@@ -557,25 +564,28 @@ student.moderator.name <- 'access.all.delayed.feedback'
 student.moderator.model.results <- estimate.student.moderator.effect(student.moderator.name, summarize=FALSE)
 
 student.model.moderator.estimates <- student.moderator.model.results %>%
-  spread_draws(mu.class[class.id], moderator.effect[incentive, moderator.level]) %>%
+  spread_draws(mu.class[class.id], moderator.effect.class[class.id, moderator.level]) %>%
   ungroup() %>%
-  mutate(incentive = factor(incentive, labels=c("Non-incentivized", "Incentivized"))) %>%
   mutate(access.all.delayed.feedback = factor(moderator.level, labels=c("No", "Yes"))) %>%
-  group_by(class.id, incentive) %>%
+  select(-moderator.level) %>%
+  group_by(class.id, access.all.delayed.feedback) %>%
   sample_n(20) %>%
   ungroup() %>%
-  mutate(incentive.mcmc = factor(incentive, labels=c("Non-incentivized", "Incentivized"))) %>%
-  select(-incentive) %>%
-  left_join(select(classes, class.id, incentive), by="class.id") %>%
-  filter(incentive == incentive.mcmc) %>%
-  select(-incentive.mcmc)
-
+  left_join(select(classes, class.id, incentive), by="class.id")
+  
 ggplot(student.class.data, aes(x=access.all.delayed.feedback, y=delta.z, color=incentive))+
   facet_wrap(.~class.id)+
   geom_point(position=position_jitterdodge(), alpha=0.2) +
-  geom_crossbar(data=student.model.moderator.estimates, aes(x=access.all.delayed.feedback, y = mu.class + moderator.effect, color=incentive, ymin=..y.., ymax=..y..), position=position_dodge(width=0.75), width=0.5, size=0.1) +
+  geom_crossbar(data=student.model.moderator.estimates, aes(x=access.all.delayed.feedback, y = mu.class + moderator.effect.class, color=incentive, ymin=..y.., ymax=..y..), position=position_dodge(width=0.75), width=0.5, size=0.1, alpha=0.2) +
   labs(x="Accessed all delayed feedback", y="Delta-z")+
   scale_color_brewer(type="qual", palette = "Set1", name="Incentive Condition")+
   theme_bw()+
   theme(strip.background = element_blank(), strip.text = element_blank())
+```
+
+Condition-level moderator estimates
+```{r}
+student.moderator.model.results %>%
+  spread_draws(moderator.effect[incentive, moderator.level]) %>%
+  median_hdci(.width=0.95)
 ```

@@ -22,7 +22,7 @@ model {
   for(s in 1:n.students){
     # student performance is sampled from a normal distribution that is specific to each class
     delta.z[s] ~ dnorm(mu[s], 1 / sigma.class[class.index[s]] ^ 2)
-    mu[s] <- mu.class[class.index[s]] + moderator.effect[class.condition[class.index[s]], moderator.level[s]]
+    mu[s] <- mu.class[class.index[s]] + moderator.effect.class[class.index[s], moderator.level[s]]
   }
   for(c in 1:n.classes){
     # the mean of the class distribution is sampled from a condition-specific normal, with moderator effect.
@@ -30,6 +30,9 @@ model {
     
     # the sd of the class distribution is sampled from a gamma
     sigma.class[c] ~ dgamma(sh.sigma.class, ra.sigma.class)
+    for(l in 1:n.moderator.levels){
+      moderator.effect.class[c, l] ~ dnorm(moderator.effect[class.condition[c], l], 1 / moderator.effect.sigma[class.condition[c], l] ^2)
+    }
   }
   for(i in 1:n.conditions){
     # prior distribution for the condition-specific mu normal
@@ -37,6 +40,7 @@ model {
     sigma.condition.effect[i] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
     for(l in 1:n.moderator.levels){
       moderator.effect[i,l] ~ dnorm(0,1)
+      moderator.effect.sigma[i,l] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
     }
   }
   # prior distribution for the gamma defining sd of classes

@@ -14,14 +14,16 @@
 # sigma.sd is the sd of the distribution from which classroom sigma parameters are drawn
 # mu.condition.effect[i] is the mean of the distribution from which mu.class values are drawn in condition i
 # sigma.condition.effect[i] is the sd of the distribution from which mu.class values are drawn in condition i
-# moderator.effect[i] is the coefficient of the moderator regression in condition i
+# moderator.effect.class[c] is the coefficient of the student-level moderator in class c
+# moderator.effect[i] is the mean of the distribution from which moderator.effect.class coefficients are drawn in condition i
+# moderator.effect.sigma[i] is the sd of the distribution from which moderator.effect.class coefficients are drawn in condition i
 # r.sq[i] is the R^2 value for student-level variance in condition i
 
 model {
   for(s in 1:n.students){
     # student performance is sampled from a normal distribution that is specific to each class
     delta.z[s] ~ dnorm(mu[s], 1 / sigma.class[class.index[s]] ^ 2)
-    mu[s] <- mu.class[class.index[s]] + moderator.effect[class.condition[class.index[s]]] * moderator.z[s]
+    mu[s] <- mu.class[class.index[s]] + moderator.effect.class[class.index[s]] * moderator.z[s]
   }
   for(c in 1:n.classes){
     # the mean of the class distribution is sampled from a condition-specific normal, with moderator effect.
@@ -29,12 +31,16 @@ model {
     
     # the sd of the class distribution is sampled from a gamma
     sigma.class[c] ~ dgamma(sh.sigma.class, ra.sigma.class)
+    
+    # the moderator effect in this class
+    moderator.effect.class[c] ~ dnorm(moderator.effect[class.condition[c]], 1 / moderator.effect.sigma[class.condition[c]] ^ 2)
   }
   for(i in 1:n.conditions){
     # prior distribution for the condition-specific mu normal
     mu.condition.effect[i] ~ dnorm(0,1)
     sigma.condition.effect[i] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
     moderator.effect[i] ~ dnorm(0, 1)
+    moderator.effect.sigma[i] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
   }
   # prior distribution for the gamma defining sd of classes
   ra.sigma.class <- (sigma.mode + sqrt(sigma.mode^2 + 4*sigma.sd^2)) / (2 * sigma.sd^2)

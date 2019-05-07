@@ -5,6 +5,7 @@
 # class.condition[c] is classroom c's incentive condition
 # n.classes is the number of unique classes
 # n.conditions is the number of unique conditions that split all the moderators (here it will be 2 for no incentive and yes incentive)
+# moderator.level[s] is the value of the moderator for student s
 
 ### parameter dictionary
 # mu.class[c] is the mean of the distribution from which delta.z scores are drawn for class c
@@ -13,7 +14,8 @@
 # sigma.sd is the sd of the distribution from which classroom sigma parameters are drawn
 # mu.condition.effect[i] is the mean of the distribution from which mu.class values are drawn in condition i
 # sigma.condition.effect[i] is the sd of the distribution from which mu.class values are drawn in condition i
-# mu.condition.diff is simple mu.condition.effect[1] - mu.condition.effect[2]. this is the difference between incentive and no incentive conditions.
+# moderator.effect[i] is the coefficient of the moderator regression in condition i
+# r.sq[i] is the R^2 value for student-level variance in condition i
 
 model {
   for(s in 1:n.students){
@@ -39,14 +41,15 @@ model {
   sh.sigma.class <- 1 + sigma.mode * ra.sigma.class
   
   sigma.mode ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
-  sigma.sd ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
+  sigma.sd ~ dgamma(1.640388, 0.6403882) # mode = 1, sd = 2
   
   # normalize moderator scale
   moderator.z <- moderator.level - mean(moderator.level) / sd(moderator.level)
   
-  # computed bayesian r2 (http://www.stat.columbia.edu/~gelman/research/unpublished/bayes_R2.pdf)
-  r.sq[1] <- sd(mu[no.incentive.classes])^2 / (sd(mu[no.incentive.classes])^2 + sd(delta.z[no.incentive.classes] - mu[no.incentive.classes])^2 + 0.00000000000001)
-  r.sq[2] <- sd(mu[incentive.classes])^2 / (sd(mu[incentive.classes])^2 + sd(delta.z[incentive.classes] - mu[incentive.classes])^2 + 0.00000000000001)
+  # computed bayesian r2
+  # small addition to the denominator (1.0E-12) seems to be necessary to avoid initialization issues.
+  r.sq[1] <- sd(mu[no.incentive.classes])^2 / (sd(mu[no.incentive.classes])^2 + sd(delta.z[no.incentive.classes] - mu[no.incentive.classes])^2 + 1.0E-12)
+  r.sq[2] <- sd(mu[incentive.classes])^2 / (sd(mu[incentive.classes])^2 + sd(delta.z[incentive.classes] - mu[incentive.classes])^2 + 1.0E-12)
   
   
 }

@@ -13,7 +13,8 @@
 # sigma.sd is the sd of the distribution from which classroom sigma parameters are drawn
 # mu.condition.effect[i] is the mean of the distribution from which mu.class values are drawn in condition i
 # sigma.condition.effect[i] is the sd of the distribution from which mu.class values are drawn in condition i. this is a measure of heterogeneity.
-# mu.condition.diff is simple mu.condition.effect[1] - mu.condition.effect[2]. this is the difference between incentive and no incentive conditions.
+# mu.condition.diff is the difference between incentive and no incentive conditions.
+# mu.condition.average is the average of the incentive and no incentive conditions.
 
 model {
   for(s in 1:n.students){
@@ -29,17 +30,17 @@ model {
   }
   for(i in 1:n.conditions){
     # prior distribution for the condition-specific mu normal
-    mu.condition.effect[i] ~ dnorm(0,2.5)
+    mu.condition.effect[i] ~ dnorm(0, 2)
     sigma.condition.effect[i] ~ dgamma(1.640388, 0.6403882) # mode = 1, sd = 2
   }
-  # prior distribution for the gamma defining sd of classes
+  # prior distribution for the gamma defining sd of students in classes
   ra.sigma.class <- (sigma.mode + sqrt(sigma.mode^2 + 4*sigma.sd^2)) / (2 * sigma.sd^2)
   sh.sigma.class <- 1 + sigma.mode * ra.sigma.class
   
   sigma.mode ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
   sigma.sd ~ dgamma(1.640388, 0.6403882) # mode = 1, sd = 2
   
-  # computed quantity of difference in effect by incentive condition
+  # computed quantities
   mu.condition.diff <- mu.condition.effect[1] - mu.condition.effect[2]
   mu.condition.average <- (mu.condition.effect[1] + mu.condition.effect[2]) / 2
 }

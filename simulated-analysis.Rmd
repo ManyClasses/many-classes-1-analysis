@@ -353,7 +353,7 @@ Plot the R^2 of the models with class-level moderators
 ```{r}
 ggplot(class.moderator.estimates %>% filter(.variable=="r.sq"), aes(x=.value, xmin=.lower, xmax=.upper, y=moderator, color=factor(incentive)))+
   geom_pointintervalh(shape=15, position = position_dodgev(height=0.3)) +
-  labs(y="Moderator", x="Bayes R2")+
+  labs(y="Class-Level Moderator", x="Bayes R2")+
   scale_color_brewer(name="Incentive Condition", labels=c("Non-incentivized", "Incentivized"), type="qual", palette = "Set1")+
   theme_minimal()+
   theme(strip.background = element_blank(), strip.text = element_blank())
@@ -435,7 +435,7 @@ Plot student-level moderators
 ```{r}
 ggplot(student.moderator.estimates %>% filter(.variable=="r.sq"), aes(x=.value, xmin=.lower, xmax=.upper, y=moderator, color=factor(incentive)))+
   geom_pointintervalh(shape=15, position = position_dodgev(height=0.3)) +
-  labs(y="Moderator", x="Bayes R2")+
+  labs(y="Student-Level Moderator", x="Bayes R2")+
   scale_color_brewer(name="Incentive Condition", labels=c("Non-incentivized", "Incentivized"), type="qual", palette = "Set1")+
   theme_minimal()+
   theme(strip.background = element_blank(), strip.text = element_blank())

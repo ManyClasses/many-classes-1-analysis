@@ -30,7 +30,7 @@ model {
   }
   for(i in 1:n.conditions){
     # prior distribution for the condition-specific mu normal
-    mu.condition.effect[i] ~ dnorm(0, 2)
+    mu.condition.effect[i] ~ dnorm(0, 1)
     sigma.condition.effect[i] ~ dgamma(1.640388, 0.6403882) # mode = 1, sd = 2
   }
   # prior distribution for the gamma defining sd of students in classes

@@ -1,0 +1,744 @@
+---
+title: "ManyClasses 1 Simulated Analysis"
+output: html_notebook
+---
+
+```{r message=FALSE, warning=FALSE}
+library(runjags)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(ggstance)
+library(stringr)
+library(tibble)
+library(forcats)
+library(purrr)
+library(tidybayes)
+library(readr)
+```
+
+Set seed for reproducibility
+```{r}
+set.seed(47401)
+```
+
+# Loading in data
+
+```{r}
+student.data <- read_csv('data/manyclasses_student_outcomes_and_moderators.csv', col_types = "ddfddfffddddddd")
+
+institutions.data <- read_csv('data/many_classes_institutions.csv', col_types = "cdddndddddd") %>% select(-Institution)
+
+classes.data <- read_csv('data/many_classes_classes.csv', col_types = "ddffdddfdfddfdddfddffddddfdf")
+classes.data <- classes.data %>% arrange(manyclasses_course_id) %>%
+  mutate(IncentiveCondition = factor(IncentiveCondition, levels=c("No", "Yes"))) %>%
+  left_join(institutions.data, by=c("manyclasses_institution_id"))
+
+student.class.data <- student.data %>% 
+  left_join(classes.data, by=c("manyclasses_course_id", "manyclasses_institution_id"))
+```
+
+# Treatment characteristic descriptives
+
+The mean number of items on quiz assignments
+
+```{r}
+classes.data %>% 
+  mutate(items_per_quiz = Quiz_CumulativeNumberofQuizQuestions / Class_NumberOfTreatmentQuizzes) %>% 
+  summarize(M_items_per_quiz = mean(items_per_quiz), SD_items_per_quiz = sd(items_per_quiz))
+  
+```
+
+Quiz scores
+
+```{r}
+classes.data %>% 
+  summarize(M = mean(Quiz_Difficulty_AveragePercentCorrect), SD = sd(Quiz_Difficulty_AveragePercentCorrect))
+  
+```
+
+Retrieval-based quiz items
+
+```{r}
+classes.data %>% 
+  summarize(M = mean(Quiz_ProportionOfRetrievalBasedQuizItems), SD = sd(Quiz_ProportionOfRetrievalBasedQuizItems), min=min(Quiz_ProportionOfRetrievalBasedQuizItems), max=max(Quiz_ProportionOfRetrievalBasedQuizItems))
+  
+```
+
+Type of feedback content
+
+```{r}
+table(classes.data$Quiz_TypeOfFeedbackContent)
+
+# proportion of explanation-based feedback
+16 / 38
+```
+
+Delay between immediate and delayed
+
+```{r}
+classes.data %>% 
+  summarize(M = mean(Quiz_NumberOfDayDelay_BetweenDueDateandDelayedFeedback), SD = sd(Quiz_NumberOfDayDelay_BetweenDueDateandDelayedFeedback), min=min(Quiz_NumberOfDayDelay_BetweenDueDateandDelayedFeedback), max=max(Quiz_NumberOfDayDelay_BetweenDueDateandDelayedFeedback))
+  
+```
+
+Student's viewed incentivized feedback
+
+```{r}
+student.class.data %>% filter(IncentiveCondition == "Yes") %>% pull(student_accessedAllDelayedFeedback) %>% table()
+```
+# Assessment Characteristics
+
+Number of questions
+
+```{r}
+classes.data %>% 
+  summarize(M = mean(Exam_NumberOfQuestionsMappedToQuizzes), SD = sd(Exam_NumberOfQuestionsMappedToQuizzes))
+  
+```
+Exam performance
+
+```{r}
+classes.data %>% 
+  summarize(M = mean(Exam_Difficulty_AveragePercentCorrect), SD = sd(Exam_Difficulty_AveragePercentCorrect))
+  
+```
+
+# Model 1: Overall Effect of Feedback and Incentives
+
+This model estimates the distribution of delta-z scores in each classroom, as well as the distribution of classroom averages in each incentive condition. The JAGS model code is available in `basic-model-jags.txt`. The model is run in a separate script to take advantage of high-performance computing resources. The output from that run is loaded here.
+
+## Loading the results of the overall model
+
+```{r}
+model.1.result <- readRDS('data/model-runs/overall.rds')
+```
+
+## Class-level effect of feedback and incentive
+
+```{r fig.height=7, fig.width=7}
+tidy.model.1.summary <- model.1.result %>%
+  gather_draws(mu.class[manyclasses_course_id], mu.condition.effect[incentive], mu.condition.average) %>%
+  median_hdci(.width = c(0.5,0.95)) %>%
+  left_join(classes.data, by=c("manyclasses_course_id")) %>%
+  mutate(IncentiveCondition = as.character(IncentiveCondition)) %>%
+  mutate(incentive = case_when(
+    .variable == "mu.condition.average" ~ "z",
+    incentive == 1 ~ "No",
+    incentive == 2 ~ "Yes",
+    is.na(incentive) ~ IncentiveCondition
+  )) %>%
+  mutate(y.label = case_when(
+    .variable == 'mu.condition.average' ~ "Overall Effect",
+    .variable == 'mu.condition.effect' & incentive == "No" ~ "Non-Incentivized",
+    .variable == 'mu.condition.effect' & incentive == "Yes" ~ "Incentivized",
+    is.na(manyclasses_course_id) ~ incentive,
+    !is.na(manyclasses_course_id) ~ as.character(manyclasses_course_id)
+  )) %>%
+  ungroup() %>%
+  mutate(.variable = factor(.variable, levels=c('mu.class', 'mu.condition.effect', 'mu.condition.average'))) %>%
+  mutate(y.label = factor(y.label)) %>%
+  mutate(y.label = fct_reorder(y.label, .value))
+  
+fig.1 <- ggplot(tidy.model.1.summary, aes(x=.value, y=y.label, xmin=.lower, xmax=.upper, color=incentive))+
+  geom_vline(xintercept=0, linetype='dashed', color="grey50") +
+  geom_pointintervalh(show_point=F) +
+  geom_point(size=2)+
+  labs(y="Class ID", x="\nRelative Benefit of Immediate Feedback, \u0394z")+
+  facet_grid(.variable~., scales = 'free', space='free')+
+  scale_color_manual(name="Incentive Condition", 
+                     breaks=c("No", "Yes"), 
+                     labels=c("Non-incentivized", "Incentivized", NULL), 
+                     values=c("#377eb8", "#e41a1c", "Black"))+
+  theme_minimal()+
+  theme(
+    strip.background = element_blank(), 
+    strip.text = element_blank(),
+    axis.title.x = element_text(size = 11)
+  )
+
+ggsave('figs/class-level-effects.png', plot=fig.1, device="png")
+
+fig.1
+```
+
+Summary stats on condition-level and global effects.
+
+```{r}
+model.1.result %>% 
+  gather_draws(mu.condition.effect[incentive], sigma.condition.effect[incentive], mu.condition.diff, mu.condition.average) %>%
+  median_hdci(.width = c(0.95))
+```
+
+Plot of Confidence Intervals without model estimation, to illustrate degree of shrinkage and what would happen without shrinkage in inferences.
+
+```{r fig.height=5, fig.width=5, message=FALSE, warning=FALSE}
+no.shrink.data <- student.class.data %>% 
+  group_by(manyclasses_course_id) %>% 
+  summarise(m = mean(outcome), se=sd(outcome)/sqrt(n()), n=n(), p=t.test(outcome, mu=0)$p.value, ci.low = t.test(outcome, mu=0)$conf.int[1], ci.high = t.test(outcome, mu=0)$conf.int[2]) %>%
+  left_join(classes.data, by="manyclasses_course_id") %>%
+  mutate(manyclasses_course_id = factor(manyclasses_course_id)) %>%
+  mutate(manyclasses_course_id = fct_reorder(manyclasses_course_id, m))
+
+no.shrinkage.plot <- ggplot(no.shrink.data, aes(x=m, xmin=ci.low, xmax = ci.high, y=manyclasses_course_id, color=IncentiveCondition)) +
+  geom_vline(xintercept=0, linetype='dashed', color="grey50") +
+  geom_errorbarh()+
+  labs(x="Relative Benefit of Immediate Feedback, \u0394z", y="Class ID", color="Incentive Condition")+
+  scale_color_manual(values=c("#377eb8", "#e41a1c"), labels=c("Non-Incentivized", "Incentivized"))+
+  theme_minimal()+
+  theme(
+    strip.background = element_blank(), 
+    strip.text = element_blank(),
+    axis.title.x = element_text(size = 11)
+  )
+
+ggsave('figs/no-shrinkage-class-effects.png', no.shrinkage.plot, device="png")
+
+no.shrinkage.plot
+```
+
+## Heterogeneity Analysis
+
+We quantify heterogeneity at the classroom level by looking at the model's estimate of the standard deviation of classroom-level means.
+
+```{r}
+model.1.h.tidy <- model.1.result %>% gather_draws(sigma.condition.effect[incentive])
+
+model.1.h.tidy %>% median_hdci(.width = c(0.95))
+```
+
+We can visualize the distribution of classroom-level means according to the model.
+
+```{r message=FALSE, warning=FALSE}
+#class.means <- student.class.data %>% group_by(manyclasses_course_id) %>% summarize(M=mean(outcome)) %>% pull(M)
+
+condition.summary <- model.1.result %>% 
+  spread_draws(mu.condition.effect[incentive], sigma.condition.effect[incentive]) %>% 
+  median_hdci(.width=c(0.95))
+
+class.observed.means.data= student.class.data %>% group_by(manyclasses_course_id, IncentiveCondition) %>% summarize(M=mean(outcome)) 
+
+heterogeneity.plot <- ggplot(class.observed.means.data, aes(x=M, color=IncentiveCondition))+
+  geom_rug()+
+  stat_function(
+    data=data.frame(x=-1:1),
+    mapping=aes(x=x, color=NULL),
+    geom="line",
+    color="#377eb8",
+    size=1,
+    fun=dnorm, 
+    n=501, 
+    args=list(
+      mean = (condition.summary %>% filter(incentive==1) %>% pull(mu.condition.effect)),
+      sd = (condition.summary %>% filter(incentive==1) %>% pull(sigma.condition.effect))
+    )
+  ) +
+  stat_function(
+    data=data.frame(x=-1:1),
+    mapping=aes(x=x, color=NULL),
+    geom="line",
+    color="#e41a1c",
+    size=1,
+    fun=dnorm, 
+    n=501, 
+    args=list(
+      mean = (condition.summary %>% filter(incentive==2) %>% pull(mu.condition.effect)),
+      sd = (condition.summary %>% filter(incentive==2) %>% pull(sigma.condition.effect))
+    )
+  ) +
+  scale_color_manual(values=c("#377eb8", "#e41a1c"), labels=c("Non-Incentivized", "Incentivized"))+
+  scale_y_continuous(breaks=NULL)+
+  geom_vline(xintercept = 0, color="grey50", linetype="dashed")+
+  labs(x="Relative Benefit of Immediate Feedback, \u0394z\nClassroom-level means", y=NULL, color="Incentive Condition")+
+  theme_bw()+
+  theme(panel.grid = element_blank(),
+        axis.title.x = element_text(size=10),
+        legend.position = c(0.8,0.8))
+
+ggsave('figs/heterogeneity-plot.png', heterogeneity.plot, device = "png", width=6, height=6)
+
+heterogeneity.plot
+```
+
+## Chain Info
+
+Summarize convergence and sampling metrics from the chains for Model 1.
+
+Number of samples per chain:
+```{r}
+model.1.result$sample
+```
+Worst psrf:
+```{r}
+max(model.1.result$summaries[,'psrf'])
+```
+Smallest effective sample size:
+```{r}
+min(model.1.result$summaries[,'SSeff'])
+```
+
+# Moderator Analysis
+
+Generating a list of moderators based on data columns
+
+```{r}
+class.level.moderators <- colnames(classes.data)[3:length(colnames(classes.data))]
+class.level.moderators <- class.level.moderators[class.level.moderators != "IncentiveCondition"]
+
+student.level.moderators <- colnames(student.data)[5:length(colnames(student.data))]
+```
+
+
+## R^2^ estimates
+
+Load in the estimates from `extract-r2-data-from-model-runs.R`. Estimation extraction was moved to a different script because it is memory-intensive to load the chains necessary to run these calculations.
+
+```{r}
+r2.moderator.estimates <- read_csv('data/generated/moderator-r2-summaries.csv', col_types = 'dfddddffff')
+```
+
+Create pretty names for factors
+
+```{r}
+r2.moderator.estimates <- r2.moderator.estimates %>%
+  rowwise() %>%
+  mutate(moderator.level = str_to_title(str_split(moderator, '_')[[1]][1])) %>%
+  mutate(pretty.names = case_when(
+    moderator == "Class_ConsentRate" ~ "ᴱConsent Rate",
+    moderator == "Class_Discipline" ~ "Discipline (STEM vs. Non-STEM)",
+    moderator == "Class_Format" ~ "Format (In-Person, Hybrid, Online)",
+    moderator == "Class_Level" ~ "Class Level",
+    moderator == "Class_NumberOfExams" ~ "Number of Exams",
+    moderator == "Class_NumberOfTreatmentQuizzes" ~ "Number of Treatment Quizzes",
+    moderator == "Class_ProportionLecture" ~ "Proportion Lecture",
+    moderator == "Class_QuizzesCombinedInOutcomeScores" ~ "ᴱQuizzes Combined in Outcome Scores",
+    moderator == "Class_Size" ~ "Size",
+    moderator == "Exam_AverageDaysBetweenQuizDueDateandExam" ~ "Avg. Days Between Quiz and Exam",
+    moderator == "Exam_Difficulty_AveragePercentCorrect" ~ "Difficulty: Avg. % Correct",
+    moderator == "Exam_MappingToQuizzes_ExamSameVSNot" ~ "Question Type Same As Quizzes",
+    moderator == "Exam_NumberOfQuestionsMappedToQuizzes" ~ "Number of Questions Mapped to Quizzes",
+    moderator == "Exam_ProportionOfRetrievalBasedExamItems" ~ "% Retrieval Based Exam Items",
+    moderator == "Exam_Type_InClassVSTakeHome" ~ "Exam Type (In Class vs. Take Home)",
+    moderator == "Exam_Value_ProportionOfClassPoints" ~ "% Class Points",
+    moderator == "Institution_AdmissionRate" ~ "Admission Rate",
+    moderator == "Institution_AverageAnnualCostofAttendance" ~ "Avg. Annual Cost",
+    moderator == "Institution_GraduationRate" ~ "Graduation Rate",
+    moderator == "Institution_PercentofFullTimeStudents" ~ "% Full Time Students",
+    moderator == "Institution_PercentPartTimeFaculty" ~ "% Full Time Faculty",
+    moderator == "Institution_PercentReceivingFederalStudentLoans" ~ "% Students Receiving Fed. Loans",
+    moderator == "Institution_PercentStudentsReceivingIncomeBasedPellGrants" ~ "% Students Receiving Pell Grants",
+    moderator == "Institution_PercentStudentsReturningAfterFirstYear" ~ "% Students Returning After 1st Year",
+    moderator == "Institution_PercentWhite" ~ "% White Students",
+    moderator == "Quiz_CumulativeNumberofQuizQuestions" ~ "Cumulative Number of Questions",
+    moderator == "Quiz_NumberOfDayDelay_BetweenDueDateandDelayedFeedback" ~ "Delay Length for Delayed Feedback",
+    moderator == "Quiz_ProportionOfRetrievalBasedQuizItems" ~ "% of Retrieval Based Items",
+    moderator == "Quiz_QuestionPresentation_OneAtaTimeVSAllatOnce" ~ "Simultaneous vs. Sequential Questions",
+    moderator == "Quiz_TimeConstraint" ~ "Time Constraint",
+    moderator == "Quiz_TypeOfFeedbackContent" ~ "Feedback Content Type",
+    moderator == "Quiz_Value_ProportionOfClassPoints" ~ "% of Class Points",
+    moderator == "Quiz_FollowUpValue_ProportionOfClassPoints" ~ "Follow Up % of Class Points",
+    moderator == "Quiz_Difficulty_AveragePercentCorrect" ~ "Avg. % Correct",
+    moderator == "student_accessedAllDelayedFeedback" ~ "Accessed All Delayed Feedback",
+    moderator == "student_accessedAllImmediateFeedback" ~ "Accessed All Immediate FeedbackNo",
+    moderator == "student_accessedAllTreatmentQuizzes" ~ "Accessed All Treatment Quizzes",
+    moderator == "student_avgTimeSpentOnTreatmentQuizzes" ~ "ᴱAvg. Time Spent on Treatment Quizzes",
+    moderator == "student_avgTimeSpentViewingFeedback" ~ "ᴱAvg. Time Spent Viewing Feedback",
+    moderator == "student_cumulativeGrade" ~ "Cumulative Grade",
+    moderator == "student_daysFeedbackAfterSubmission" ~ "Days Feedback After Submission", 
+    moderator == "student_daysSubmittedBeforeDueDate" ~ "Days Submitted Before Due Date",
+    moderator == "student_nbrOfQuizzesWithFeedbackView" ~ "ᴱNumber of Quizzes With Viewed Feedback",
+    moderator == "student_timeSpentOnTreatmentQuizzes" ~ "Time Spent on Treatment Quizzes",
+    moderator == "student_timeSpentViewingFeedback" ~ "Time Spent Viewing Feedback"
+  ))
+```
+
+Plot the R^2^ of the models with class-level moderators
+
+```{r fig.height=10, fig.width=6}
+moderator.r2.plot <- ggplot(r2.moderator.estimates, aes(x=.value, xmin=.lower, xmax=.upper, y=pretty.names, color=factor(incentive)))+
+  geom_pointintervalh(shape=15, position = position_dodgev(height=0.5)) +
+  labs(y=NULL, x=bquote('Moderator Bayes'~R^2), color="Incentive Condition:")+
+  scale_color_manual(values=c("#377eb8", "#e41a1c"), labels=c("Non-Incentivized", "Incentivized"))+
+  facet_grid(moderator.level~., scales="free_y", space="free" )+
+  scale_x_continuous(expand = c(0.005,0.005))+
+  theme_bw()+
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.position = "bottom",
+        axis.text.y = element_text(size=8,angle=0))
+
+ggsave('figs/moderator-summary-plot-r2.png', plot=moderator.r2.plot, device="png", height=10, width=6)
+
+moderator.r2.plot
+```
+
+## Moderator Coefficients
+
+The R^2^ analysis was less diagnostic than we expected, so here we make a similar plot looking at the credible intervals for the coefficients of each moderator. We had initially wanted a single value per moderator regardless of whether the moderator was continuous or discrete, but instead we've settled for plotting the coefficients separately for each level of the discrete moderators.
+
+
+```{r}
+moderator.plot.data <- read_csv('data/generated/moderator-summaries.csv')
+```
+
+```{r}
+moderator.plot.data <- moderator.plot.data %>%
+  rowwise() %>%
+  mutate(level.name = str_to_title(str_split(moderator, "_")[[1]][1])) %>%
+  mutate(moderator.expanded = if_else(moderator.type=="Discrete", paste0(moderator,".",factor.level), moderator)) %>%
+  mutate(pretty.names = case_when(
+    moderator.expanded == "Class_ConsentRate" ~ "ᴱConsent Rate",
+    moderator.expanded == "Class_Discipline.1" ~ "Discipline: Non-STEM",
+    moderator.expanded == "Class_Discipline.2" ~ "Discipline: STEM",
+    moderator.expanded == "Class_Format.1" ~ "Format: In-Class",
+    moderator.expanded == "Class_Format.2" ~ "Format: Online",
+    moderator.expanded == "Class_Format.3" ~ "Format: Hybrid",
+    moderator.expanded == "Class_Level.1" ~ "Level: Intro",
+    moderator.expanded == "Class_Level.2" ~ "Level: Intermediate",
+    moderator.expanded == "Class_Level.3" ~ "Level: Advanced",
+    moderator.expanded == "Class_NumberOfExams" ~ "Number of Exams",
+    moderator.expanded == "Class_NumberOfTreatmentQuizzes" ~ "Number of Treatment Quizzes",
+    moderator.expanded == "Class_ProportionLecture" ~ "Proportion Lecture",
+    moderator.expanded == "Class_QuizzesCombinedInOutcomeScores.1" ~ "ᴱQuizzes Combined in Outcome Scores: No",
+    moderator.expanded == "Class_QuizzesCombinedInOutcomeScores.2" ~ "ᴱQuizzes Combined in Outcome Scores: Yes",
+    moderator.expanded == "Class_Size" ~ "Size",
+    moderator.expanded == "Exam_AverageDaysBetweenQuizDueDateandExam" ~ "Avg. Days Between Quiz and Exam",
+    moderator.expanded == "Exam_Difficulty_AveragePercentCorrect" ~ "Difficulty: Avg. % Correct",
+    moderator.expanded == "Exam_MappingToQuizzes_ExamSameVSNot.1" ~ "Question Type Same As Quizzes: No",
+    moderator.expanded == "Exam_MappingToQuizzes_ExamSameVSNot.2" ~ "Question Type Same As Quizzes: Yes",
+    moderator.expanded == "Exam_NumberOfQuestionsMappedToQuizzes" ~ "Number of Questions Mapped to Quizzes",
+    moderator.expanded == "Exam_ProportionOfRetrievalBasedExamItems" ~ "% Retrieval Based Exam Items",
+    moderator.expanded == "Exam_Type_InClassVSTakeHome.1" ~ "Exam Type: In Class",
+    moderator.expanded == "Exam_Type_InClassVSTakeHome.2" ~ "Exam Type: Take Home",
+    moderator.expanded == "Exam_Value_ProportionOfClassPoints" ~ "% Class Points",
+    moderator.expanded == "Institution_AdmissionRate" ~ "Admission Rate",
+    moderator.expanded == "Institution_AverageAnnualCostofAttendance" ~ "Avg. Annual Cost",
+    moderator.expanded == "Institution_GraduationRate" ~ "Graduation Rate",
+    moderator.expanded == "Institution_PercentofFullTimeStudents" ~ "% Full Time Students",
+    moderator.expanded == "Institution_PercentPartTimeFaculty" ~ "% Full Time Faculty",
+    moderator.expanded == "Institution_PercentReceivingFederalStudentLoans" ~ "% Students Receiving Fed. Loans",
+    moderator.expanded == "Institution_PercentStudentsReceivingIncomeBasedPellGrants" ~ "% Students Receiving Pell Grants",
+    moderator.expanded == "Institution_PercentStudentsReturningAfterFirstYear" ~ "% Students Returning After 1st Year",
+    moderator.expanded == "Institution_PercentWhite" ~ "% White Students",
+    moderator.expanded == "Quiz_CumulativeNumberofQuizQuestions" ~ "Cumulative Number of Questions",
+    moderator.expanded == "Quiz_NumberOfDayDelay_BetweenDueDateandDelayedFeedback" ~ "Delay Length for Delayed Feedback",
+    moderator.expanded == "Quiz_ProportionOfRetrievalBasedQuizItems" ~ "% of Retrieval Based Items",
+    moderator.expanded == "Quiz_QuestionPresentation_OneAtaTimeVSAllatOnce.1" ~ "Question Presentation: Simultaneous",
+    moderator.expanded == "Quiz_QuestionPresentation_OneAtaTimeVSAllatOnce.2" ~ "Question Presentation: Sequential",
+    moderator.expanded == "Quiz_TimeConstraint.1" ~ "Time Constraint: Yes",
+    moderator.expanded == "Quiz_TimeConstraint.2" ~ "Time Constraint: No",
+    moderator.expanded == "Quiz_TypeOfFeedbackContent.1" ~ "Feedback Content: Explanation",
+    moderator.expanded == "Quiz_TypeOfFeedbackContent.2" ~ "Feedback Content: Correct Ans.",
+    moderator.expanded == "Quiz_TypeOfFeedbackContent.3" ~ "Feedback Content: Verification",
+    moderator.expanded == "Quiz_Value_ProportionOfClassPoints" ~ "% of Class Points",
+    moderator.expanded == "Quiz_FollowUpValue_ProportionOfClassPoints" ~ "Follow Up % of Class Points",
+    moderator.expanded == "Quiz_Difficulty_AveragePercentCorrect" ~ "Avg. % Correct",
+    moderator.expanded == "student_accessedAllDelayedFeedback.1" ~ "Accessed All Delayed Feedback: No",
+    moderator.expanded == "student_accessedAllDelayedFeedback.2" ~ "Accessed All Delayed Feedback: Yes",
+    moderator.expanded == "student_accessedAllImmediateFeedback.1" ~ "Accessed All Immediate Feedback: No",
+    moderator.expanded == "student_accessedAllImmediateFeedback.2" ~ "Accessed All Immediate Feedback: Yes",
+    moderator.expanded == "student_accessedAllTreatmentQuizzes.1" ~ "Accessed All Treatment Quizzes: No",
+    moderator.expanded == "student_accessedAllTreatmentQuizzes.2" ~ "Accessed All Treatment Quizzes: Yes",
+    moderator.expanded == "student_avgTimeSpentOnTreatmentQuizzes" ~ "ᴱAvg. Time Spent on Treatment Quizzes",
+    moderator.expanded == "student_avgTimeSpentViewingFeedback" ~ "ᴱAvg. Time Spent Viewing Feedback",
+    moderator.expanded == "student_cumulativeGrade" ~ "Cumulative Grade",
+    moderator.expanded == "student_daysFeedbackAfterSubmission" ~ "Days Feedback After Submission", 
+    moderator.expanded == "student_daysSubmittedBeforeDueDate" ~ "Days Submitted Before Due Date",
+    moderator.expanded == "student_nbrOfQuizzesWithFeedbackView" ~ "ᴱNumber of Quizzes With Viewed Feedback",
+    moderator.expanded == "student_timeSpentOnTreatmentQuizzes" ~ "Time Spent on Treatment Quizzes",
+    moderator.expanded == "student_timeSpentViewingFeedback" ~ "Time Spent Viewing Feedback"
+  ))
+```
+
+```{r fig.height=10, fig.width=6}
+moderator.summary.plot <- ggplot(moderator.plot.data, 
+       aes(y=pretty.names, xmin=low.95, x=median, xmax=upper.95, color=incentive, group=interaction(incentive, factor.level)))+
+  geom_vline(xintercept = 0, color="grey50")+
+  geom_pointrange(position = position_dodge2(width=0.6), size=0.2)+
+  scale_color_brewer(type="qual", palette = "Set1")+
+  facet_grid(level.name~., scales="free_y", space="free" )+
+  labs(x="Moderator Coefficient", y=NULL, color="Incentive Condition:")+
+  coord_cartesian(xlim=c(-0.35, 0.35))+
+  theme_bw()+
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.position = "bottom",
+        axis.text.y = element_text(size=8,angle=0))
+
+ggsave('figs/moderator-summary-plot.png', plot=moderator.summary.plot, device="png", height=10, width=6)
+
+moderator.summary.plot
+```
+
+
+
+## Individual Moderator Plots
+
+These functions generate a plot for a single moderator. The plots include uncertainty estimates of both moderator effects and class-level estimates.
+
+### Classroom-level plotting function
+
+```{r warning=FALSE}
+plot.class.level.moderator <- function(moderator.name, moderator.pretty.name=NA, jitter=0){
+  
+  # Load model run
+  moderator.model.result <- readRDS(paste0("data/model-runs/moderator-class-",moderator.name,".rds"))
+  
+  # Grab CIs for means of each class, and merge with the moderator value
+  model.class.estimates <- moderator.model.result %>%
+    gather_draws(mu.class[manyclasses_course_id]) %>%
+    median_hdci(.width = c(0.95)) %>%
+    left_join(classes.data %>% select(manyclasses_course_id, IncentiveCondition, !!sym(moderator.name)), by="manyclasses_course_id")
+  
+  
+  # Check if the moderator is discrete or continuous.
+  is.continuous.moderator <- is.numeric(classes.data[[moderator.name]])
+  
+  # For Continuous Moderators
+  if(is.continuous.moderator){
+    
+    # Get the moderator effect estimates from the model
+    model.moderator.posterior <- moderator.model.result %>%
+      spread_draws(mu.condition.effect[incentive], moderator.effect[incentive]) %>%
+      mutate(slope = moderator.effect / sd(classes.data[[moderator.name]])) %>%
+      mutate(intercept = mu.condition.effect - moderator.effect * mean(classes.data[[moderator.name]])/sd(classes.data[[moderator.name]])) %>%
+      ungroup() %>%
+      mutate(incentive = factor(incentive, labels=c("No", "Yes"))) %>%
+      group_by(incentive) 
+    
+    model.moderator.hdci <- model.moderator.posterior %>% median_hdci()
+      
+    model.moderator.estimates <- model.moderator.posterior %>% sample_n(40)
+    
+    p <- ggplot(model.class.estimates, aes(x=!!sym(moderator.name), y=.value, ymin=.lower, ymax=.upper, color=IncentiveCondition)) +
+      geom_pointinterval(alpha=0.5, position=position_jitter(width=jitter))+
+      geom_abline(data=model.moderator.estimates, 
+                  aes(intercept = intercept, slope=slope, color=factor(incentive)), alpha=0.1, show.legend = FALSE) +
+      labs(
+        x=ifelse(is.na(moderator.pretty.name), moderator.name, moderator.pretty.name), 
+        y="Relative benefit of immediate feedback", 
+        caption=paste0(
+          "Incentivized Feedback 95% HDI: ", 
+          paste(model.moderator.hdci %>% filter(incentive == "Yes") %>% pull(moderator.effect.lower) %>% round(3), 
+                collapse= " "), 
+          " to ", 
+          paste(model.moderator.hdci %>% filter(incentive == "Yes") %>% pull(moderator.effect.upper) %>% round(3), 
+                collapse = " "), 
+          "\n",
+          "Non-incentivized Feedback 95% HDI: ", 
+          paste(model.moderator.hdci %>% filter(incentive == "No") %>% pull(moderator.effect.lower) %>% round(3), 
+                collapse = " "), 
+          " to ", 
+          paste(model.moderator.hdci %>% filter(incentive == "No") %>% pull(moderator.effect.upper) %>% round(3), 
+                collapse = " ")
+        )
+      ) +
+      scale_color_manual(values=c("#377eb8", "#e41a1c"), name="Incentive Condition") +
+      theme_bw() +
+      theme(panel.grid=element_blank(),
+            plot.caption=element_text(hjust=1))
+      
+  }
+  
+  # For Discrete Moderators
+  if(!is.continuous.moderator){
+  
+    model.moderator.posterior <- moderator.model.results %>%
+      spread_draws(mu.condition.effect[incentive], moderator.effect[incentive, moderator.level]) %>%
+      ungroup() %>%
+      mutate(incentive = factor(incentive, labels=c("No", "Yes"))) %>%
+      mutate(!!moderator.name := factor(moderator.level, labels=levels(classes.data[[moderator.name]]))) %>%
+      group_by(incentive, !!sym(moderator.name))
+    
+    model.moderator.hdci <- model.moderator.posterior %>% median_hdci()
+      
+    model.moderator.estimates <- model.moderator.posterior %>% sample_n(40)
+    
+    p <- ggplot(model.class.estimates, aes(x=!!sym(moderator.name), y=.value, ymin=.lower, ymax=.upper, color=IncentiveCondition)) +
+    geom_pointinterval(position=position_jitterdodge(), alpha=0.2) +
+    geom_crossbar(data=model.moderator.estimates, aes(x=!!sym(moderator.name), y = mu.condition.effect + moderator.effect, color=incentive, ymin=..y.., ymax=..y..), position=position_dodge(width=0.75), width=0.5, size=0.1) +
+    labs(x=ifelse(is.na(moderator.pretty.name), moderator.name, moderator.pretty.name), 
+         y="Relative benefit of immediate feedback", 
+         caption=paste0(
+        "Incentivized Feedback 95% HDI: ", 
+        paste(model.moderator.hdci %>% filter(incentive == "Yes") %>% pull(moderator.effect.lower) %>% round(3), collapse= " "), 
+        " to ", 
+        paste(model.moderator.hdci %>% filter(incentive == "Yes") %>% pull(moderator.effect.upper) %>% round(3), collapse = " "), 
+        "\n",
+        "Non-incentivized Feedback 95% HDI: ", 
+        paste(model.moderator.hdci %>% filter(incentive == "No") %>% pull(moderator.effect.lower) %>% round(3), collapse = " "), 
+        " to ", 
+        paste(model.moderator.hdci %>% filter(incentive == "No") %>% pull(moderator.effect.upper) %>% round(3), collapse = " ")
+        )) +
+      scale_color_manual(values=c("#377eb8", "#e41a1c"), name="Incentive Condition") +
+      theme_bw() +
+      theme(panel.grid=element_blank(),
+            plot.caption=element_text(hjust=1))
+  }
+  
+  ggsave(paste0('figs/moderators/class/',moderator.name,'.png'),device="png", width=7, height=5)
+    
+  return(p)
+
+}
+```
+
+### Student-level plotting function
+
+```{r}
+plot.student.level.moderator <- function(student.moderator.name, moderator.pretty.name = NA){
+
+  student.moderator.model.results <- estimate.student.moderator.effect(student.moderator.name, summarize=FALSE)
+  
+  if(is.numeric(student.class.data[[student.moderator.name]])){
+    student.model.moderator.estimates <- student.moderator.model.results %>%
+      spread_draws(mu.class[manyclasses_course_id], moderator.effect.class[manyclasses_course_id]) %>%
+      group_by(manyclasses_course_id) %>%
+      sample_n(20) %>%
+      mutate(slope = moderator.effect.class / sd(student.class.data[[student.moderator.name]], na.rm = T)) %>%
+      mutate(intercept = mu.class - moderator.effect.class * mean(student.class.data[[student.moderator.name]], na.rm = T)/sd(student.class.data[[student.moderator.name]], na.rm = T)) %>%
+      ungroup() %>%
+      left_join(select(classes.data, manyclasses_course_id, IncentiveCondition), by="manyclasses_course_id")
+    
+    student.moderator.model.results %>%
+      spread_draws(mu.class[class.id], moderator.effect[incentive]) %>%
+      mutate(slope = moderator.effect / sd(student.class.data[[student.moderator.name]])) %>%
+      median_hdci(slope, .width=0.95)
+    
+    p <- ggplot(student.class.data %>% filter(!is.na(!!sym(student.moderator.name))), aes(x=!!sym(student.moderator.name), y=outcome, color=IncentiveCondition))+
+      facet_wrap(.~manyclasses_course_id)+
+      scale_color_brewer(type="qual",palette = "Set1", name="Incentive Condition")+
+      geom_point(alpha=0.1)+
+      geom_abline(data=student.model.moderator.estimates, aes(slope=slope, intercept=intercept, color=IncentiveCondition), alpha=0.3)+
+      #geom_smooth(method="lm", se=FALSE, color="black")+
+      labs(x=ifelse(is.na(moderator.pretty.name), student.moderator.name, moderator.pretty.name), y="Observed delta-z")+
+      theme_bw()+
+      theme(strip.background = element_blank(), strip.text = element_blank(), panel.grid = element_blank())
+    
+  } else {
+    student.model.moderator.estimates <- student.moderator.model.results %>%
+      spread_draws(mu.class[manyclasses_course_id], moderator.effect.class[manyclasses_course_id, moderator.level]) %>%
+      ungroup() %>%
+      mutate(!!student.moderator.name := factor(moderator.level, labels=levels(student.class.data[[student.moderator.name]]))) %>%
+      select(-moderator.level) %>%
+      group_by(manyclasses_course_id, !!sym(student.moderator.name)) %>%
+      sample_n(20) %>%
+      ungroup() %>%
+      left_join(select(student.class.data, manyclasses_course_id, IncentiveCondition), by="manyclasses_course_id")
+  
+    p <- ggplot(student.class.data %>% filter(!is.na(!!sym(student.moderator.name))), aes(x=!!sym(student.moderator.name), y=outcome, color=IncentiveCondition))+
+      facet_wrap(.~manyclasses_course_id)+
+      geom_point(position=position_jitterdodge(), alpha=0.2) +
+      geom_crossbar(data=student.model.moderator.estimates, aes(x=!!sym(student.moderator.name), y = mu.class + moderator.effect.class, color=IncentiveCondition, ymin=..y.., ymax=..y..), position=position_dodge(width=0.75), width=0.5, size=0.1, alpha=0.2) +
+      labs(x=ifelse(is.na(moderator.pretty.name), student.moderator.name, moderator.pretty.name), y="Delta-z")+
+      scale_color_brewer(type="qual", palette = "Set1", name="Incentive Condition")+
+      theme_bw()+
+      theme(strip.background = element_blank(), strip.text = element_blank())
+  }
+  
+  ggsave(paste0('figs/moderators/student/',moderator.name,'.png'),device="png")
+    
+  return(p)
+
+}
+```
+
+
+
+### Picking specific moderators to look at
+
+We primarily picked moderators related to dosage of the experimental manipulation.
+
+#### Class Level: Number of Treatment Quizzes
+
+Quick tally of the number of treatment quizzes in classes
+
+```{r}
+classes.data %>% pull(Class_NumberOfTreatmentQuizzes) %>% table()
+```
+
+Generating the plot, with a slightly modified scale from the default.
+
+```{r}
+p <- plot.class.level.moderator('Class_NumberOfTreatmentQuizzes', "Number of Treatment Quizzes", jitter=0.5)
+p <- p + scale_x_continuous(breaks = seq(2,20,by=2))
+ggsave('figs/moderators/class/Class_NumberOfTreatmentQuizzes.png', p, device="png", width=7, height=5)
+p
+```
+
+#### Class Level: Cumulative Quiz Questions
+
+Tallying the number of cumulative quiz questions
+
+```{r}
+classes.data %>% pull(Quiz_CumulativeNumberofQuizQuestions) %>% table()
+```
+
+Generating the plot
+
+```{r}
+plot.class.level.moderator('Quiz_CumulativeNumberofQuizQuestions', 'Cumulative Number of Quiz Questions', jitter=0)
+```
+
+Checking the correlation coefficient between number of questions and number of quizzes
+
+```{r}
+cor(classes.data$Quiz_CumulativeNumberofQuizQuestions, classes.data$Class_NumberOfTreatmentQuizzes, method="spearman")
+```
+
+#### Class Level: Length of Delay
+
+Tallying the length of delay by classes
+
+```{r}
+classes.data %>% pull(Quiz_NumberOfDayDelay_BetweenDueDateandDelayedFeedback) %>% table()
+```
+
+Generating the plot
+
+```{r}
+plot.class.level.moderator('Quiz_NumberOfDayDelay_BetweenDueDateandDelayedFeedback', 'Days Between Due Date and Delayed Feedback', jitter=0.25)
+```
+
+#### Class Level: Proportion of Retrieval Based Exam Items
+
+Generating the plot
+
+```{r}
+plot.class.level.moderator('Exam_ProportionOfRetrievalBasedExamItems', 'Proportion of Retrieval-Based Exam Items', jitter=0)
+```
+
+Exploratory question (of a sort): What happens when we average parameter estimates across conditions?
+
+```{r}
+exam.retrieval.moderator.data <- readRDS('data/model-runs/moderator-class-Exam_ProportionOfRetrievalBasedExamItems.rds')
+
+exam.retrival.moderator.data.tidy <- exam.retrieval.moderator.data %>%
+  spread_draws(moderator.effect[incentive]) %>% 
+  group_by(.chain, .iteration, .draw) %>%
+  summarize(m.effect = mean(moderator.effect)) %>%
+  ungroup() %>%
+  median_hdci()
+  
+exam.retrival.moderator.data.tidy
+```
+
+
+## Chain Info
+
+Summarizing the chain diagnostics for moderators
+
+```{r}
+moderator.chain.summaries <- read_csv('data/generated/moderator-chain-summaries.csv')
+```
+
+```{r}
+table(moderator.chain.summaries$n.samples.per.chain)
+```
+
+```{r}
+min(moderator.chain.summaries$min.ess)
+max(moderator.chain.summaries$worst.psrf)
+```

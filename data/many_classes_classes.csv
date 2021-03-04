@@ -1,0 +1,39 @@
+manyclasses_course_id,manyclasses_institution_id,Class_Discipline,Class_Format,Class_Size,Class_ConsentRate,Class_ProportionLecture,Class_Level,Class_NumberOfExams,Class_QuizzesCombinedInOutcomeScores,Class_NumberOfTreatmentQuizzes,Quiz_CumulativeNumberofQuizQuestions,Quiz_QuestionPresentation_OneAtaTimeVSAllatOnce,Quiz_ProportionOfRetrievalBasedQuizItems,Quiz_Difficulty_AveragePercentCorrect,Quiz_NumberOfDayDelay_BetweenDueDateandDelayedFeedback,Quiz_TypeOfFeedbackContent,Quiz_Value_ProportionOfClassPoints,Quiz_FollowUpValue_ProportionOfClassPoints,IncentiveCondition,Quiz_TimeConstraint,Exam_AverageDaysBetweenQuizDueDateandExam,Exam_NumberOfQuestionsMappedToQuizzes,Exam_ProportionOfRetrievalBasedExamItems,Exam_Difficulty_AveragePercentCorrect,Exam_Type_InClassVSTakeHome,Exam_Value_ProportionOfClassPoints,Exam_MappingToQuizzes_ExamSameVSNot
+1,9,Non-STEM,in-class,81,0.8000,0.85,Introductory,4,No,4,40,All at once,0,0.8229,3,Explanation,0.04,0.01,Yes,Yes,10.5,16,0,0.84,In class,0.7,Same
+2,12,STEM,online,39,0.7436,0,Advanced,4,Yes,10,100,All at once,0,0.8885,2,Correct answer,0.1,0.06,Yes,Yes,14.3,102.5,0,0.76,Take home,0.65,Different
+3,8,STEM,in-class,227,0.8870,0.15,Introductory,6,No,6,58,All at once,0,0.8527,2,Correct answer,0.03,0.01,Yes,No,12.17,6,0,0.72,In class,0.09,Different
+4,10,STEM,in-class,28,0.9286,0.3,Intermediate,4,No,4,60,All at once,0.04,1.0000,1,Verification,0.05,NA,No,No,3.75,23,0.08,0.83,In class,0.45,Different
+5,11,STEM,in-class,27,0.6250,0.78,Advanced,3,Yes,8,40,One at a time,0,0.8818,3,Explanation,0.09,0,Yes,Yes,17.5,40,0.09,0.78,In class,0.45,Different
+6,2,STEM,in-class,448,0.8819,0.75,Intermediate,5,Yes,8,50,All at once,0,0.6005,1,Correct answer,0.03,0.01,Yes,Yes,5.5,24.8,1,0.7,In class,0.33,Different
+7,11,Non-STEM,in-class,19,0.2632,0.38,Introductory,2,Yes,8,96,All at once,0.48,0.8477,3,Verification,0.18,NA,No,Yes,14.625,7,1,0.92,In class,0.2,Different
+8,6,STEM,in-class,24,0.8696,0.2,Advanced,2,No,2,10,All at once,0,0.8529,2,Explanation,0.01,NA,No,No,4.5,11.5,1,0.94,Take home,0.1,Different
+9,8,STEM,online,115,0.9756,0.35,Introductory,6,No,6,30,All at once,0,0.7158,3,Correct answer,0.09,NA,No,Yes,7,6,0,0.67,Take home,0.72,Same
+10,15,STEM,in-class,87,0.8851,0.8,Intermediate,2,Yes,6,30,All at once,0,0.7099,5,Correct answer,0.07,NA,No,Yes,19.33,7,0.25,0.67,In class,0.4,Different
+11,15,STEM,in-class,80,0.7436,0.7,Intermediate,2,No,2,8,One at a time,0,0.9272,2,Correct answer,0.05,NA,No,No,7,8,0,0.84,Take home,0.2,Different
+12,15,Non-STEM,in-class,130,0.8073,0.8,Introductory,3,Yes,14,70,All at once,0,0.8661,3,Explanation,0.16,NA,No,Yes,21.07,32.5,0,0.81,Take home,0.39,Different
+13,13,STEM,in-class,27,0.9259,0.8,Introductory,6,No,6,111,All at once,0,0.7270,4,Correct answer,0.2,NA,No,Yes,6,60,1,0.76,In class,0.6,Same
+14,6,STEM,in-class,631,0.7597,0.6,Introductory,2,Yes,12,140,One at a time,0,0.8714,3,Verification,0.1,0.01,Yes,No,24.83,10,0.7,0.92,In class,0.4,Different
+15,14,Non-STEM,in-class,21,0.5714,0.9,Advanced,4,Yes,18,198,One at a time,0,0.7669,2,Explanation,0.1,0.01,Yes,Yes,11.3,40,0,0.69,In class,0.53,Different
+16,14,Non-STEM,hybrid,24,0.5833,0.09,Advanced,2,Yes,10,100,One at a time,0,0.8608,3,Explanation,0.06,0.01,Yes,Yes,10,40,0,0.88,In class,0.1,Different
+17,2,STEM,in-class,38,0.5405,0.1,Intermediate,2,No,2,12,One at a time,0,0.8757,4,Explanation,0,NA,No,No,17.5,2.5,1,0.79,Take home,0.2,Different
+18,13,Non-STEM,in-class,24,0.8750,1,Intermediate,2,No,2,20,All at once,0,0.9188,2,Correct answer,0.1,NA,No,Yes,23,6,0.07,0.81,In class,0.15,Different
+19,12,Non-STEM,in-class,45,0.5217,0.6,Introductory,3,Yes,8,40,All at once,0,0.8311,2,Correct answer,0.1,0,Yes,Yes,18.25,12,0,0.8,In class,0.04,Different
+20,15,STEM,in-class,108,0.8783,0.68,Introductory,4,No,4,62,All at once,0,0.6597,1,Explanation,0.01,0.01,Yes,No,10.5,11.5,0,0.75,Take home,0.65,Different
+21,7,STEM,in-class,23,0.8333,0.75,Introductory,4,No,4,12,All at once,0,0.7239,1,Explanation,0.04,0.01,Yes,Yes,10.25,7,0,0.82,In class,0.35,Different
+22,13,STEM,in-class,51,0.7143,0.5,Introductory,2,Yes,2,12,All at once,0,0.6212,3,Explanation,0.1,NA,No,Yes,12,20,1,0.82,In class,0.33,Different
+23,2,STEM,in-class,111,0.8376,0.6,Intermediate,2,No,2,36,All at once,0,0.7666,3,Correct answer,0.03,0,Yes,Yes,15.5,1,1,0.72,In class,0.18,Different
+24,4,Non-STEM,online,34,0.9375,0.25,Introductory,4,No,4,40,All at once,0,0.8195,5,Correct answer,0.17,NA,No,Yes,10.5,20,0,0.8,Take home,0.09,Same
+25,5,STEM,hybrid,26,0.8000,0.05,Introductory,3,Yes,12,120,One at a time,0,0.7622,4,Correct answer,0.24,NA,No,Yes,16.83333333,60,0,0.6,In class,0.3,Same
+26,2,STEM,in-class,55,0.6786,0.9,Intermediate,4,Yes,10,124,All at once,0,0.8826,2,Correct answer,0.22,NA,No,No,12.3,80.5,0.15,0.8,In class,0.57,Different
+27,2,STEM,in-class,28,0.8333,0.65,Intermediate,4,Yes,4,12,All at once,0,0.7783,5,Explanation,0.08,NA,No,No,25,16,0.09,0.82,In class,0.38,Different
+28,1,STEM,online,28,0.6429,0.5,Intermediate,3,Yes,10,100,All at once,0,0.7156,1,Correct answer,0.2,NA,No,No,5.8,50,0,0.62,Take home,0.07,Different
+29,1,STEM,in-class,28,0.6333,0.7,Advanced,3,Yes,10,120,All at once,1,0.8056,3,Correct answer,0.1,0.02,Yes,No,18.9,30,0.57,0.63,In class,0.42,Different
+30,13,STEM,in-class,16,0.9500,0.65,Introductory,4,Yes,8,37,All at once,0.05,0.8769,2,Explanation,0.04,0.01,Yes,Yes,11.375,18.5,0.9,0.69,In class,0.65,Different
+31,11,STEM,in-class,32,0.5600,0.5,Introductory,2,Yes,4,40,All at once,0,0.8142,2,Verification,0.06,0.01,Yes,Yes,8.75,35.5,0,0.89,In class,0.18,Different
+32,8,Non-STEM,in-class,44,0.8182,0.75,Advanced,2,Yes,4,180,All at once,0,0.9064,1,Explanation,0.15,NA,No,Yes,19.5,39,0.05,0.9,Take home,0.25,Different
+33,3,Non-STEM,online,29,0.4643,0.1,Introductory,2,Yes,14,140,One at a time,0,0.8343,3,Verification,0.1,0.01,Yes,Yes,30.5,26.5,0,0.87,Take home,0.25,Different
+34,2,Non-STEM,in-class,22,0.8696,0.1,Intermediate,2,Yes,4,40,All at once,1,0.7542,3,Explanation,0.04,0.01,Yes,No,19.75,61.5,1,0.94,In class,0.1,Different
+35,6,STEM,in-class,43,0.9070,0.6,Intermediate,2,No,2,20,All at once,0,0.8845,3,Explanation,0.05,NA,No,No,12,4.5,1,0.92,Take home,0.3,Different
+36,15,STEM,hybrid,33,0.5000,0,Introductory,2,Yes,6,84,All at once,0,0.9081,3,Explanation,0.09,0.01,Yes,Yes,23.5,11,0,0.82,Take home,0.07,Different
+37,2,Non-STEM,in-class,54,0.7759,0.75,Intermediate,2,No,2,16,All at once,0,0.5945,1,Correct answer,0.03,0.01,Yes,Yes,5,12.5,0,0.71,In class,0.5,Different
+38,3,Non-STEM,online,37,0.7368,0,Intermediate,2,Yes,12,120,One at a time,0,0.7641,2,Correct answer,0.36,0.04,Yes,Yes,31.5,5,1,0.88,Take home,0.3,Different

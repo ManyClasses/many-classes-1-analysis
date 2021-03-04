@@ -5,7 +5,7 @@
 # class.condition[c] is classroom c's incentive condition
 # n.classes is the number of unique classes
 # n.conditions is the number of unique conditions that split all the moderators (here it will be 2 for no incentive and yes incentive)
-# moderator.level[s] is the value of the moderator for student s
+# moderator.level[c] is the value of the continuous moderator for classroom c
 
 ### parameter dictionary
 # mu.class[c] is the mean of the distribution from which delta.z scores are drawn for class c
@@ -14,33 +14,32 @@
 # sigma.sd is the sd of the distribution from which classroom sigma parameters are drawn
 # mu.condition.effect[i] is the mean of the distribution from which mu.class values are drawn in condition i
 # sigma.condition.effect[i] is the sd of the distribution from which mu.class values are drawn in condition i
-# moderator.effect.class[c] is the coefficient of the student-level moderator in class c
-# moderator.effect[i] is the mean of the distribution from which moderator.effect.class coefficients are drawn in condition i
-# moderator.effect.sigma[i] is the sd of the distribution from which moderator.effect.class coefficients are drawn in condition i
-# r.sq[i] is the R^2 value for student-level variance in condition i
+# moderator.effect[i] is the coefficient of the moderator regression in condition i
+# r.sq[i] is the R^2 value for class-level variance in condition i
 
 model {
   for(s in 1:n.students){
     # student performance is sampled from a normal distribution that is specific to each class
-    delta.z[s] ~ dnorm(mu[s], 1 / sigma.class[class.index[s]] ^ 2)
-    mu[s] <- mu.class[class.index[s]] + moderator.effect.class[class.index[s]] * moderator.z[s]
+    delta.z[s] ~ dnorm(mu.class[class.index[s]], 1 / sigma.class[class.index[s]] ^ 2)
   }
   for(c in 1:n.classes){
     # the mean of the class distribution is sampled from a condition-specific normal, with moderator effect.
-    mu.class[c] ~ dnorm(mu.condition.effect[class.condition[c]], 1 / sigma.condition.effect[class.condition[c]] ^ 2)
+    mu.class[c] ~ dnorm(mu[c] , 1 / sigma.condition.effect[class.condition[c]] ^ 2)
+    
+    # intercept of the above normal dist should be condition specific
+    # moderator effect should have condition specific value, with sd
+    # coefficient of variation is sd of moderator / value of intercept param
+    # will get two of these, one for each incentive condition.
+    mu[c] <- mu.condition.effect[class.condition[c]] + moderator.effect[class.condition[c]] * moderator.z[c]
     
     # the sd of the class distribution is sampled from a gamma
     sigma.class[c] ~ dgamma(sh.sigma.class, ra.sigma.class)
-    
-    # the moderator effect in this class
-    moderator.effect.class[c] ~ dnorm(moderator.effect[class.condition[c]], 1 / moderator.effect.sigma[class.condition[c]] ^ 2)
   }
   for(i in 1:n.conditions){
     # prior distribution for the condition-specific mu normal
-    mu.condition.effect[i] ~ dnorm(0,1)
+    mu.condition.effect[i]  ~ dnorm(0, 1)
     sigma.condition.effect[i] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
     moderator.effect[i] ~ dnorm(0, 1)
-    moderator.effect.sigma[i] ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
   }
   # prior distribution for the gamma defining sd of classes
   ra.sigma.class <- (sigma.mode + sqrt(sigma.mode^2 + 4*sigma.sd^2)) / (2 * sigma.sd^2)
@@ -49,13 +48,12 @@ model {
   sigma.mode ~ dgamma(1.640388, 1.280776) # mode = 0.5, sd = 1
   sigma.sd ~ dgamma(1.640388, 0.6403882) # mode = 1, sd = 2
   
-  # normalize moderator scale
-  moderator.z <- moderator.level - mean(moderator.level) / sd(moderator.level)
+  # normalize the moderator
+  moderator.z <- moderator.level #(moderator.level - mean(moderator.level)) / sd(moderator.level) 
   
   # computed bayesian r2
   # small addition to the denominator (1.0E-12) seems to be necessary to avoid initialization issues.
-  r.sq[1] <- sd(mu[no.incentive.classes])^2 / (sd(mu[no.incentive.classes])^2 + sd(delta.z[no.incentive.classes] - mu[no.incentive.classes])^2 + 1.0E-12)
-  r.sq[2] <- sd(mu[incentive.classes])^2 / (sd(mu[incentive.classes])^2 + sd(delta.z[incentive.classes] - mu[incentive.classes])^2 + 1.0E-12)
-  
+  r.sq[1] <- sd(mu[no.incentive.classes])^2 / (sd(mu[no.incentive.classes])^2 + sd(mu.class[no.incentive.classes] - mu[no.incentive.classes])^2 + 1.0E-12)
+  r.sq[2] <- sd(mu[incentive.classes])^2 / (sd(mu[incentive.classes])^2 + sd(mu.class[incentive.classes] - mu[incentive.classes])^2 + 1.0E-12)
   
 }
